@@ -1,0 +1,7 @@
+public fn main() -> int32 {
+    print("Hello World");
+
+    system("pause");
+
+    return 0;
+}

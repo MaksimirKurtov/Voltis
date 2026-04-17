@@ -1,0 +1,3 @@
+C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/build/CMakeFiles/voltisc.dir
+C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/build/CMakeFiles/edit_cache.dir
+C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/build/CMakeFiles/rebuild_cache.dir
