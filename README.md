@@ -1,21 +1,36 @@
 # Voltis compiler prototype (`voltisc`)
 
-This is a **working prototype compiler** for a **small Voltis subset**, written in **C++17**.
-It is not the full whitepaper language yet.
+This repository contains a **C++17 prototype compiler** for a **small, implemented Voltis subset**.
+It follows the whitepaper direction, but it is not the full language/toolchain yet.
 
-## What it currently does
+## Implemented pipeline (today)
 
-`voltisc`:
-1. lexes a `.vlt` source file
-2. parses it into an AST
-3. transpiles that AST into portable **C++17**
-4. optionally invokes a native C++ compiler to produce a Windows `.exe`
+`voltisc` currently runs:
 
-So this is a real compiler pipeline, but the backend target is currently generated C++ instead of direct PE machine code.
+1. Lexer (`.vlt` -> tokens)
+2. Parser (tokens -> AST)
+3. Semantic analysis (subset checks)
+4. Typed lowering (AST -> VIR)
+5. Backend abstraction (`IBackend`)
+6. LLVM IR text backend (`.ll`) as the default production-directed artifact
 
-## Supported Voltis subset
+There is also an explicit temporary path:
 
-### File: `examples/hello.vlt`
+- `--bootstrap-cpp`: AST -> generated C++17 -> host C++ compiler (optional)
+
+## Implemented vs scaffolded status
+
+| Area | Status in code |
+|---|---|
+| Semantic analysis | **Implemented for subset**: function registration, scoped symbols, type checks for expressions/assignments/returns/calls, conversion-member validation |
+| VIR | **Implemented for subset**: typed VIR model (`src/vir.*`) and lowering from semantic output (`src/lowering.*`) |
+| Backend abstraction + LLVM | **Implemented boundary** (`src/backend.h`) + **implemented LLVM IR text backend** (`src/backend_llvm_ir.*`) |
+| Native `.obj/.exe` generation from VIR backend flow | **Not implemented yet** (no object emission/link stage wired in production-directed path) |
+
+## Supported Voltis subset (actual parser/sema subset)
+
+Syntax in this repo requires braces and semicolons:
+
 ```voltis
 public fn add(int32 a, int32 b) -> int32 {
     return a + b;
@@ -40,22 +55,17 @@ public fn main() -> int32 {
 }
 ```
 
-### Features implemented
-- `public/private/...` modifiers are accepted and ignored for now
-- `fn name(...) -> type {}` functions
-- `int32`, `float32`, `float64`, `string`, `bool`, `void`
-- local variable declarations
-- `var` local inference in basic cases
-- `if / else`
-- `return`
-- arithmetic: `+ - * /`
-- comparisons: `== != < <= > >=`
-- logical `and / or / not`
-- function calls
-- built-in `print(...)`
-- conversion methods:
+Implemented language pieces:
+
+- top-level `fn name(...) -> type { ... }`
+- modifiers are lexed/parsed and currently ignored (`public/private/protected/internal/static/readonly/const/volatile/unsafe`)
+- types: `int32`, `float32`, `float64`, `string`, `bool`, `void`
+- statements: local declarations, `var` inference, assignment, expression statements, `if/else`, `return`
+- expressions: arithmetic, comparisons, logical `and/or/not` (and `!`), direct function calls, conversion member calls
+- built-in function: `print(expr)`
+- conversion members:
   - `.ToString()`
-  - `.ToInt32()`
+  - `.ToInt32()` (float -> int truncates toward zero)
   - `.ToFloat32()`
   - `.ToFloat64()`
   - `.ToBool()`
@@ -63,15 +73,14 @@ public fn main() -> int32 {
   - `.Floor()`
   - `.Ceil()`
 
-## Project files
-- `src/main.cpp` - CLI driver and native compiler invocation
-- `src/lexer.h` / `src/lexer.cpp` - tokenizer
-- `src/token.h` - token types
-- `src/ast.h` - AST nodes
-- `src/parser.h` / `src/parser.cpp` - parser
-- `src/codegen.h` / `src/codegen.cpp` - C++ backend
-- `examples/hello.vlt` - example Voltis program
-- `CMakeLists.txt` - build config
+Semantic diagnostics currently include:
+
+- unknown/duplicate symbols
+- unknown types
+- function argument count/type mismatch
+- return type mismatch
+- assignment compatibility errors
+- invalid conversion member usage/receiver type
 
 ## Building the compiler
 
@@ -93,57 +102,52 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
+## Running automated tests
+
+```powershell
+cmake -S . -B build
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
 ## Using the compiler
 
-### Generate C++ only
+### Production-directed default (emit LLVM IR text)
 ```bash
-voltisc examples/hello.vlt --no-link
+voltisc examples/hello.vlt
 ```
 
-### Generate C++ and build executable
+### Emit VIR text
 ```bash
-voltisc examples/hello.vlt -o hello.exe
+voltisc examples/hello.vlt --emit-vir
 ```
 
-If your compiler is not found automatically, set:
+### Emit LLVM IR text to custom path
+```bash
+voltisc examples/hello.vlt --emit-llvm -o hello.ll
+```
 
-### Windows PowerShell
+### Temporary bootstrap C++ path (scaffolding only)
+```bash
+voltisc examples/hello.vlt --bootstrap-cpp --no-link
+voltisc examples/hello.vlt --bootstrap-cpp -o hello.exe
+```
+
+If needed, pick host C++ compiler explicitly:
+
 ```powershell
 $env:VOLTIS_CXX = "clang++"
-```
-
-or
-
-```powershell
+# or
 $env:VOLTIS_CXX = "g++"
 ```
 
-Then run:
-```powershell
-.\voltisc.exe .\examples\hello.vlt -o hello.exe
-```
+## What is still missing for true native `.obj/.exe` generation
 
-## Important limitation
+From the production-directed VIR -> backend path, the following is still required:
 
-This is a **starter compiler**. It does **not** yet implement:
-- classes
-- structs
-- properties
-- modules/imports
-- arrays/lists/maps
-- Windows API extern declarations in Voltis syntax
-- direct PE code generation
-- direct machine-code backend
-- full type checking
-- decimal(sig-fig) support
-- ownership / region memory semantics from the whitepaper
+1. LLVM backend object emission (or another backend that emits COFF directly)
+2. Runtime implementation/library packaging for referenced helper symbols (print/string conversions/etc.)
+3. Linker integration (`lld-link`/`link.exe`) owned by the compiler flow
+4. CLI artifact modes for `.obj` and `.exe` from the native backend path
 
-## Best next steps
-
-1. Add semantic analysis and symbol tables
-2. Add classes/structs and method declarations
-3. Add richer type checking
-4. Add `extern "user32.dll" {}` support
-5. Add Windows ABI and import library emission
-6. Replace C++ backend with LLVM IR or direct codegen later
-
+Current default output is LLVM IR text (`.ll`), not a linked native executable.

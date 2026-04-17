@@ -78,27 +78,27 @@ Program Parser::parseProgram() {
 FunctionDecl Parser::parseFunction() {
     skipModifiers();
     consume(TokenType::KeywordFn, "Expected 'fn'");
-    std::string name = consume(TokenType::Identifier, "Expected function name").lexeme;
+    const Token& nameToken = consume(TokenType::Identifier, "Expected function name");
     consume(TokenType::LParen, "Expected '('");
 
     std::vector<Param> params;
     if (!check(TokenType::RParen)) {
         do {
             std::string type = parseType();
-            std::string paramName = consume(TokenType::Identifier, "Expected parameter name").lexeme;
-            params.push_back({type, paramName});
+            const Token& paramNameToken = consume(TokenType::Identifier, "Expected parameter name");
+            params.push_back({type, paramNameToken.lexeme, SourceLocation{paramNameToken.line, paramNameToken.column}});
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RParen, "Expected ')'");
     consume(TokenType::Arrow, "Expected '->'");
     std::string returnType = parseType();
     auto body = parseBlock();
-    return FunctionDecl{name, std::move(params), returnType, std::move(body)};
+    return FunctionDecl{nameToken.lexeme, std::move(params), returnType, std::move(body), SourceLocation{nameToken.line, nameToken.column}};
 }
 
 std::unique_ptr<BlockStmt> Parser::parseBlock() {
-    consume(TokenType::LBrace, "Expected '{'");
-    auto block = std::make_unique<BlockStmt>();
+    const Token& braceToken = consume(TokenType::LBrace, "Expected '{'");
+    auto block = std::make_unique<BlockStmt>(SourceLocation{braceToken.line, braceToken.column});
     while (!check(TokenType::RBrace) && !isAtEnd()) {
         block->statements.push_back(parseStatement());
     }
@@ -110,7 +110,6 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
     if (check(TokenType::KeywordIf)) return parseIfStatement();
     if (check(TokenType::KeywordReturn)) return parseReturnStatement();
 
-    // variable declaration support
     std::size_t save = current_;
     skipModifiers();
     if (check(TokenType::KeywordVar) || isTypeToken(peek().type)) {
@@ -122,20 +121,21 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
     if (check(TokenType::LBrace)) return parseBlock();
 
     if (check(TokenType::Identifier) && tokens_[current_ + 1].type == TokenType::Assign) {
-        std::string name = advance().lexeme;
+        const Token& nameToken = advance();
         consume(TokenType::Assign, "Expected '='");
         auto value = parseExpression();
         consume(TokenType::Semicolon, "Expected ';'");
-        return std::make_unique<AssignStmt>(name, std::move(value));
+        return std::make_unique<AssignStmt>(nameToken.lexeme, std::move(value), SourceLocation{nameToken.line, nameToken.column});
     }
 
     auto expr = parseExpression();
+    SourceLocation location = expr->location;
     consume(TokenType::Semicolon, "Expected ';'");
-    return std::make_unique<ExprStmt>(std::move(expr));
+    return std::make_unique<ExprStmt>(std::move(expr), location);
 }
 
 std::unique_ptr<Stmt> Parser::parseIfStatement() {
-    consume(TokenType::KeywordIf, "Expected 'if'");
+    const Token& ifToken = consume(TokenType::KeywordIf, "Expected 'if'");
     consume(TokenType::LParen, "Expected '('");
     auto condition = parseExpression();
     consume(TokenType::RParen, "Expected ')'");
@@ -145,14 +145,14 @@ std::unique_ptr<Stmt> Parser::parseIfStatement() {
     if (match(TokenType::KeywordElse)) {
         if (check(TokenType::KeywordIf)) {
             auto nested = parseIfStatement();
-            elseBlock = std::make_unique<BlockStmt>();
+            elseBlock = std::make_unique<BlockStmt>(SourceLocation{ifToken.line, ifToken.column});
             elseBlock->statements.push_back(std::move(nested));
         } else {
             elseBlock = parseBlock();
         }
     }
 
-    auto stmt = std::make_unique<IfStmt>();
+    auto stmt = std::make_unique<IfStmt>(SourceLocation{ifToken.line, ifToken.column});
     stmt->condition = std::move(condition);
     stmt->thenBlock = std::move(thenBlock);
     stmt->elseBlock = std::move(elseBlock);
@@ -160,15 +160,16 @@ std::unique_ptr<Stmt> Parser::parseIfStatement() {
 }
 
 std::unique_ptr<Stmt> Parser::parseReturnStatement() {
-    consume(TokenType::KeywordReturn, "Expected 'return'");
+    const Token& returnToken = consume(TokenType::KeywordReturn, "Expected 'return'");
     auto expr = parseExpression();
     consume(TokenType::Semicolon, "Expected ';'");
-    return std::make_unique<ReturnStmt>(std::move(expr));
+    return std::make_unique<ReturnStmt>(std::move(expr), SourceLocation{returnToken.line, returnToken.column});
 }
 
 std::unique_ptr<Stmt> Parser::parseVarDeclStatement() {
     skipModifiers();
-    auto decl = std::make_unique<VarDeclStmt>();
+    SourceLocation location{peek().line, peek().column};
+    auto decl = std::make_unique<VarDeclStmt>(location);
     if (match(TokenType::KeywordVar)) {
         decl->isVarInference = true;
         decl->type = "var";
@@ -187,8 +188,9 @@ std::unique_ptr<Expr> Parser::parseExpression() { return parseLogicalOr(); }
 std::unique_ptr<Expr> Parser::parseLogicalOr() {
     auto expr = parseLogicalAnd();
     while (match(TokenType::KeywordOr)) {
+        const Token& opToken = previous();
         auto right = parseLogicalAnd();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), "or", std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), "or", std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
@@ -196,8 +198,9 @@ std::unique_ptr<Expr> Parser::parseLogicalOr() {
 std::unique_ptr<Expr> Parser::parseLogicalAnd() {
     auto expr = parseEquality();
     while (match(TokenType::KeywordAnd)) {
+        const Token& opToken = previous();
         auto right = parseEquality();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), "and", std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), "and", std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
@@ -205,9 +208,10 @@ std::unique_ptr<Expr> Parser::parseLogicalAnd() {
 std::unique_ptr<Expr> Parser::parseEquality() {
     auto expr = parseComparison();
     while (matchAny({TokenType::EqualEqual, TokenType::BangEqual})) {
-        std::string op = previous().lexeme;
+        const Token& opToken = previous();
+        std::string op = opToken.lexeme;
         auto right = parseComparison();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
@@ -215,9 +219,10 @@ std::unique_ptr<Expr> Parser::parseEquality() {
 std::unique_ptr<Expr> Parser::parseComparison() {
     auto expr = parseTerm();
     while (matchAny({TokenType::Less, TokenType::LessEqual, TokenType::Greater, TokenType::GreaterEqual})) {
-        std::string op = previous().lexeme;
+        const Token& opToken = previous();
+        std::string op = opToken.lexeme;
         auto right = parseTerm();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
@@ -225,9 +230,10 @@ std::unique_ptr<Expr> Parser::parseComparison() {
 std::unique_ptr<Expr> Parser::parseTerm() {
     auto expr = parseFactor();
     while (matchAny({TokenType::Plus, TokenType::Minus})) {
-        std::string op = previous().lexeme;
+        const Token& opToken = previous();
+        std::string op = opToken.lexeme;
         auto right = parseFactor();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
@@ -235,16 +241,18 @@ std::unique_ptr<Expr> Parser::parseTerm() {
 std::unique_ptr<Expr> Parser::parseFactor() {
     auto expr = parseUnary();
     while (matchAny({TokenType::Star, TokenType::Slash})) {
-        std::string op = previous().lexeme;
+        const Token& opToken = previous();
+        std::string op = opToken.lexeme;
         auto right = parseUnary();
-        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+        expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right), SourceLocation{opToken.line, opToken.column});
     }
     return expr;
 }
 
 std::unique_ptr<Expr> Parser::parseUnary() {
     if (matchAny({TokenType::Minus, TokenType::Bang, TokenType::KeywordNot})) {
-        return std::make_unique<UnaryExpr>(previous().lexeme, parseUnary());
+        const Token& opToken = previous();
+        return std::make_unique<UnaryExpr>(opToken.lexeme, parseUnary(), SourceLocation{opToken.line, opToken.column});
     }
     return parseCall();
 }
@@ -253,6 +261,7 @@ std::unique_ptr<Expr> Parser::parseCall() {
     auto expr = parsePrimary();
     while (true) {
         if (match(TokenType::LParen)) {
+            const Token& lParenToken = previous();
             std::vector<std::unique_ptr<Expr>> args;
             if (!check(TokenType::RParen)) {
                 do {
@@ -260,9 +269,9 @@ std::unique_ptr<Expr> Parser::parseCall() {
                 } while (match(TokenType::Comma));
             }
             consume(TokenType::RParen, "Expected ')' after arguments");
-            expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
+            expr = std::make_unique<CallExpr>(std::move(expr), std::move(args), SourceLocation{lParenToken.line, lParenToken.column});
         } else if (match(TokenType::Dot)) {
-            std::string method = consume(TokenType::Identifier, "Expected member name after '.'").lexeme;
+            const Token& methodToken = consume(TokenType::Identifier, "Expected member name after '.'");
             consume(TokenType::LParen, "Expected '(' after member name");
             std::vector<std::unique_ptr<Expr>> args;
             if (!check(TokenType::RParen)) {
@@ -271,7 +280,7 @@ std::unique_ptr<Expr> Parser::parseCall() {
                 } while (match(TokenType::Comma));
             }
             consume(TokenType::RParen, "Expected ')' after member call arguments");
-            expr = std::make_unique<MemberCallExpr>(std::move(expr), method, std::move(args));
+            expr = std::make_unique<MemberCallExpr>(std::move(expr), methodToken.lexeme, std::move(args), SourceLocation{methodToken.line, methodToken.column});
         } else {
             break;
         }
@@ -281,19 +290,24 @@ std::unique_ptr<Expr> Parser::parseCall() {
 
 std::unique_ptr<Expr> Parser::parsePrimary() {
     if (match(TokenType::Number)) {
-        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Number, previous().lexeme);
+        const Token& token = previous();
+        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Number, token.lexeme, SourceLocation{token.line, token.column});
     }
     if (match(TokenType::String)) {
-        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::String, previous().lexeme);
+        const Token& token = previous();
+        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::String, token.lexeme, SourceLocation{token.line, token.column});
     }
     if (match(TokenType::KeywordTrue)) {
-        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Bool, "true");
+        const Token& token = previous();
+        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Bool, "true", SourceLocation{token.line, token.column});
     }
     if (match(TokenType::KeywordFalse)) {
-        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Bool, "false");
+        const Token& token = previous();
+        return std::make_unique<LiteralExpr>(LiteralExpr::Kind::Bool, "false", SourceLocation{token.line, token.column});
     }
     if (match(TokenType::Identifier)) {
-        return std::make_unique<VariableExpr>(previous().lexeme);
+        const Token& token = previous();
+        return std::make_unique<VariableExpr>(token.lexeme, SourceLocation{token.line, token.column});
     }
     if (match(TokenType::LParen)) {
         auto expr = parseExpression();

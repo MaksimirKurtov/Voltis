@@ -2,6 +2,7 @@ CMakeFiles/voltisc.dir/src/codegen.cpp.obj: \
  C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\codegen.cpp \
  C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\codegen.h \
  C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\ast.h \
+ C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\source_location.h \
  C:/msys64/mingw64/include/c++/15.1.0/memory \
  C:/msys64/mingw64/include/c++/15.1.0/bits/memoryfwd.h \
  C:/msys64/mingw64/include/c++/15.1.0/x86_64-w64-mingw32/bits/c++config.h \

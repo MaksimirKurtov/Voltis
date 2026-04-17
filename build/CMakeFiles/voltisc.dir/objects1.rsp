@@ -1,1 +1,1 @@
-CMakeFiles/voltisc.dir/src/main.cpp.obj CMakeFiles/voltisc.dir/src/lexer.cpp.obj CMakeFiles/voltisc.dir/src/parser.cpp.obj CMakeFiles/voltisc.dir/src/codegen.cpp.obj
+CMakeFiles/voltisc.dir/src/main.cpp.obj CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj CMakeFiles/voltisc.dir/src/lexer.cpp.obj CMakeFiles/voltisc.dir/src/parser.cpp.obj CMakeFiles/voltisc.dir/src/sema.cpp.obj CMakeFiles/voltisc.dir/src/vir.cpp.obj CMakeFiles/voltisc.dir/src/lowering.cpp.obj CMakeFiles/voltisc.dir/src/codegen.cpp.obj CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj

@@ -83,11 +83,26 @@ CMakeFiles/voltisc.dir/src/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/main.cpp.s"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\main.cpp -o CMakeFiles\voltisc.dir\src\main.cpp.s
 
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj: CMakeFiles/voltisc.dir/flags.make
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/diagnostics.cpp
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj -MF CMakeFiles\voltisc.dir\src\diagnostics.cpp.obj.d -o CMakeFiles\voltisc.dir\src\diagnostics.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\diagnostics.cpp
+
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/voltisc.dir/src/diagnostics.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\diagnostics.cpp > CMakeFiles\voltisc.dir\src\diagnostics.cpp.i
+
+CMakeFiles/voltisc.dir/src/diagnostics.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/diagnostics.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\diagnostics.cpp -o CMakeFiles\voltisc.dir\src\diagnostics.cpp.s
+
 CMakeFiles/voltisc.dir/src/lexer.cpp.obj: CMakeFiles/voltisc.dir/flags.make
 CMakeFiles/voltisc.dir/src/lexer.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
 CMakeFiles/voltisc.dir/src/lexer.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/lexer.cpp
 CMakeFiles/voltisc.dir/src/lexer.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/voltisc.dir/src/lexer.cpp.obj"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/voltisc.dir/src/lexer.cpp.obj"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/lexer.cpp.obj -MF CMakeFiles\voltisc.dir\src\lexer.cpp.obj.d -o CMakeFiles\voltisc.dir\src\lexer.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\lexer.cpp
 
 CMakeFiles/voltisc.dir/src/lexer.cpp.i: cmake_force
@@ -102,7 +117,7 @@ CMakeFiles/voltisc.dir/src/parser.cpp.obj: CMakeFiles/voltisc.dir/flags.make
 CMakeFiles/voltisc.dir/src/parser.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
 CMakeFiles/voltisc.dir/src/parser.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/parser.cpp
 CMakeFiles/voltisc.dir/src/parser.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/voltisc.dir/src/parser.cpp.obj"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/voltisc.dir/src/parser.cpp.obj"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/parser.cpp.obj -MF CMakeFiles\voltisc.dir\src\parser.cpp.obj.d -o CMakeFiles\voltisc.dir\src\parser.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\parser.cpp
 
 CMakeFiles/voltisc.dir/src/parser.cpp.i: cmake_force
@@ -113,11 +128,56 @@ CMakeFiles/voltisc.dir/src/parser.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/parser.cpp.s"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\parser.cpp -o CMakeFiles\voltisc.dir\src\parser.cpp.s
 
+CMakeFiles/voltisc.dir/src/sema.cpp.obj: CMakeFiles/voltisc.dir/flags.make
+CMakeFiles/voltisc.dir/src/sema.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
+CMakeFiles/voltisc.dir/src/sema.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/sema.cpp
+CMakeFiles/voltisc.dir/src/sema.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/voltisc.dir/src/sema.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/sema.cpp.obj -MF CMakeFiles\voltisc.dir\src\sema.cpp.obj.d -o CMakeFiles\voltisc.dir\src\sema.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\sema.cpp
+
+CMakeFiles/voltisc.dir/src/sema.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/voltisc.dir/src/sema.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\sema.cpp > CMakeFiles\voltisc.dir\src\sema.cpp.i
+
+CMakeFiles/voltisc.dir/src/sema.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/sema.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\sema.cpp -o CMakeFiles\voltisc.dir\src\sema.cpp.s
+
+CMakeFiles/voltisc.dir/src/vir.cpp.obj: CMakeFiles/voltisc.dir/flags.make
+CMakeFiles/voltisc.dir/src/vir.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
+CMakeFiles/voltisc.dir/src/vir.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/vir.cpp
+CMakeFiles/voltisc.dir/src/vir.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/voltisc.dir/src/vir.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/vir.cpp.obj -MF CMakeFiles\voltisc.dir\src\vir.cpp.obj.d -o CMakeFiles\voltisc.dir\src\vir.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\vir.cpp
+
+CMakeFiles/voltisc.dir/src/vir.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/voltisc.dir/src/vir.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\vir.cpp > CMakeFiles\voltisc.dir\src\vir.cpp.i
+
+CMakeFiles/voltisc.dir/src/vir.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/vir.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\vir.cpp -o CMakeFiles\voltisc.dir\src\vir.cpp.s
+
+CMakeFiles/voltisc.dir/src/lowering.cpp.obj: CMakeFiles/voltisc.dir/flags.make
+CMakeFiles/voltisc.dir/src/lowering.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
+CMakeFiles/voltisc.dir/src/lowering.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/lowering.cpp
+CMakeFiles/voltisc.dir/src/lowering.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/voltisc.dir/src/lowering.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/lowering.cpp.obj -MF CMakeFiles\voltisc.dir\src\lowering.cpp.obj.d -o CMakeFiles\voltisc.dir\src\lowering.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\lowering.cpp
+
+CMakeFiles/voltisc.dir/src/lowering.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/voltisc.dir/src/lowering.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\lowering.cpp > CMakeFiles\voltisc.dir\src\lowering.cpp.i
+
+CMakeFiles/voltisc.dir/src/lowering.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/lowering.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\lowering.cpp -o CMakeFiles\voltisc.dir\src\lowering.cpp.s
+
 CMakeFiles/voltisc.dir/src/codegen.cpp.obj: CMakeFiles/voltisc.dir/flags.make
 CMakeFiles/voltisc.dir/src/codegen.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
 CMakeFiles/voltisc.dir/src/codegen.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/codegen.cpp
 CMakeFiles/voltisc.dir/src/codegen.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/voltisc.dir/src/codegen.cpp.obj"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/voltisc.dir/src/codegen.cpp.obj"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/codegen.cpp.obj -MF CMakeFiles\voltisc.dir\src\codegen.cpp.obj.d -o CMakeFiles\voltisc.dir\src\codegen.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\codegen.cpp
 
 CMakeFiles/voltisc.dir/src/codegen.cpp.i: cmake_force
@@ -128,25 +188,50 @@ CMakeFiles/voltisc.dir/src/codegen.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/codegen.cpp.s"
 	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\codegen.cpp -o CMakeFiles\voltisc.dir\src\codegen.cpp.s
 
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj: CMakeFiles/voltisc.dir/flags.make
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj: CMakeFiles/voltisc.dir/includes_CXX.rsp
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj: C:/Users/MKurtov/Downloads/voltis_compiler/voltis_compiler/src/backend_llvm_ir.cpp
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj: CMakeFiles/voltisc.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj -MF CMakeFiles\voltisc.dir\src\backend_llvm_ir.cpp.obj.d -o CMakeFiles\voltisc.dir\src\backend_llvm_ir.cpp.obj -c C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\backend_llvm_ir.cpp
+
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\backend_llvm_ir.cpp > CMakeFiles\voltisc.dir\src\backend_llvm_ir.cpp.i
+
+CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\src\backend_llvm_ir.cpp -o CMakeFiles\voltisc.dir\src\backend_llvm_ir.cpp.s
+
 # Object files for target voltisc
 voltisc_OBJECTS = \
 "CMakeFiles/voltisc.dir/src/main.cpp.obj" \
+"CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj" \
 "CMakeFiles/voltisc.dir/src/lexer.cpp.obj" \
 "CMakeFiles/voltisc.dir/src/parser.cpp.obj" \
-"CMakeFiles/voltisc.dir/src/codegen.cpp.obj"
+"CMakeFiles/voltisc.dir/src/sema.cpp.obj" \
+"CMakeFiles/voltisc.dir/src/vir.cpp.obj" \
+"CMakeFiles/voltisc.dir/src/lowering.cpp.obj" \
+"CMakeFiles/voltisc.dir/src/codegen.cpp.obj" \
+"CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj"
 
 # External object files for target voltisc
 voltisc_EXTERNAL_OBJECTS =
 
 voltisc.exe: CMakeFiles/voltisc.dir/src/main.cpp.obj
+voltisc.exe: CMakeFiles/voltisc.dir/src/diagnostics.cpp.obj
 voltisc.exe: CMakeFiles/voltisc.dir/src/lexer.cpp.obj
 voltisc.exe: CMakeFiles/voltisc.dir/src/parser.cpp.obj
+voltisc.exe: CMakeFiles/voltisc.dir/src/sema.cpp.obj
+voltisc.exe: CMakeFiles/voltisc.dir/src/vir.cpp.obj
+voltisc.exe: CMakeFiles/voltisc.dir/src/lowering.cpp.obj
 voltisc.exe: CMakeFiles/voltisc.dir/src/codegen.cpp.obj
+voltisc.exe: CMakeFiles/voltisc.dir/src/backend_llvm_ir.cpp.obj
 voltisc.exe: CMakeFiles/voltisc.dir/build.make
 voltisc.exe: CMakeFiles/voltisc.dir/linkLibs.rsp
 voltisc.exe: CMakeFiles/voltisc.dir/objects1.rsp
 voltisc.exe: CMakeFiles/voltisc.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable voltisc.exe"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\MKurtov\Downloads\voltis_compiler\voltis_compiler\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Linking CXX executable voltisc.exe"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles\voltisc.dir\link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

@@ -31,20 +31,6 @@ std::string CodeGenerator::escapeString(const std::string& value) const {
     return out;
 }
 
-std::string CodeGenerator::inferCppType(const Expr* expr) {
-    if (auto lit = dynamic_cast<const LiteralExpr*>(expr)) {
-        switch (lit->kind) {
-            case LiteralExpr::Kind::String: return "std::string";
-            case LiteralExpr::Kind::Bool: return "bool";
-            case LiteralExpr::Kind::Number:
-                return (lit->value.find('.') != std::string::npos || (!lit->value.empty() && lit->value.back() == 'f'))
-                    ? (lit->value.back() == 'f' ? "float" : "double")
-                    : "std::int32_t";
-        }
-    }
-    return "auto";
-}
-
 std::string CodeGenerator::genExpr(const Expr* expr) {
     if (auto lit = dynamic_cast<const LiteralExpr*>(expr)) {
         switch (lit->kind) {
@@ -90,7 +76,7 @@ std::string CodeGenerator::genExpr(const Expr* expr) {
         if (member->method == "Round") return "vt::Round(" + object + ")";
         if (member->method == "Floor") return "vt::Floor(" + object + ")";
         if (member->method == "Ceil") return "vt::Ceil(" + object + ")";
-        throw std::runtime_error("Unsupported member call: ." + member->method + "()");
+        throw std::runtime_error("Internal codegen error: unresolved member call ." + member->method + "()");
     }
     throw std::runtime_error("Unsupported expression node");
 }
@@ -100,10 +86,7 @@ std::string CodeGenerator::genStmt(const Stmt* stmt, int level) {
     if (auto exprStmt = dynamic_cast<const ExprStmt*>(stmt)) {
         if (auto call = dynamic_cast<const CallExpr*>(exprStmt->expr.get())) {
             if (auto callee = dynamic_cast<const VariableExpr*>(call->callee.get())) {
-                if (callee->name == "print") {
-                    if (call->args.size() != 1) {
-                        throw std::runtime_error("print() expects exactly one argument");
-                    }
+                if (callee->name == "print" && call->args.size() == 1) {
                     out << indent(level) << "vt::Print(" << genExpr(call->args[0].get()) << ");\n";
                     return out.str();
                 }
@@ -117,8 +100,7 @@ std::string CodeGenerator::genStmt(const Stmt* stmt, int level) {
         return out.str();
     }
     if (auto decl = dynamic_cast<const VarDeclStmt*>(stmt)) {
-        std::string type = decl->isVarInference ? inferCppType(decl->init.get()) : mapType(decl->type);
-        out << indent(level) << type << " " << decl->name << " = " << genExpr(decl->init.get()) << ";\n";
+        out << indent(level) << mapType(decl->type) << " " << decl->name << " = " << genExpr(decl->init.get()) << ";\n";
         return out.str();
     }
     if (auto assign = dynamic_cast<const AssignStmt*>(stmt)) {
@@ -166,19 +148,26 @@ std::string CodeGenerator::generate(const Program& program) {
     out << "    inline std::string ToString(double value) { return std::to_string(value); }\n";
     out << "    inline std::string ToString(bool value) { return value ? \"true\" : \"false\"; }\n";
     out << "    inline std::int32_t ToInt32(const std::string& value) { return std::stoi(value); }\n";
+    out << "    inline std::int32_t ToInt32(std::int32_t value) { return value; }\n";
+    out << "    // Float-to-int conversion truncates toward zero per Voltis rules.\n";
     out << "    inline std::int32_t ToInt32(float value) { return static_cast<std::int32_t>(value); }\n";
     out << "    inline std::int32_t ToInt32(double value) { return static_cast<std::int32_t>(value); }\n";
     out << "    inline std::int32_t ToInt32(bool value) { return value ? 1 : 0; }\n";
     out << "    inline float ToFloat32(const std::string& value) { return std::stof(value); }\n";
     out << "    inline float ToFloat32(std::int32_t value) { return static_cast<float>(value); }\n";
+    out << "    inline float ToFloat32(float value) { return value; }\n";
     out << "    inline float ToFloat32(double value) { return static_cast<float>(value); }\n";
+    out << "    inline float ToFloat32(bool value) { return value ? 1.0f : 0.0f; }\n";
     out << "    inline double ToFloat64(const std::string& value) { return std::stod(value); }\n";
     out << "    inline double ToFloat64(std::int32_t value) { return static_cast<double>(value); }\n";
     out << "    inline double ToFloat64(float value) { return static_cast<double>(value); }\n";
+    out << "    inline double ToFloat64(double value) { return value; }\n";
+    out << "    inline double ToFloat64(bool value) { return value ? 1.0 : 0.0; }\n";
     out << "    inline bool ToBool(const std::string& value) { if (value == \"true\") return true; if (value == \"false\") return false; throw std::runtime_error(\"Invalid bool conversion\"); }\n";
     out << "    inline bool ToBool(std::int32_t value) { return value != 0; }\n";
     out << "    inline bool ToBool(float value) { return value != 0.0f; }\n";
     out << "    inline bool ToBool(double value) { return value != 0.0; }\n";
+    out << "    inline bool ToBool(bool value) { return value; }\n";
     out << "    inline double Round(double value) { return std::round(value); }\n";
     out << "    inline double Floor(double value) { return std::floor(value); }\n";
     out << "    inline double Ceil(double value) { return std::ceil(value); }\n";

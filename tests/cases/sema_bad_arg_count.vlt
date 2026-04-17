@@ -1,0 +1,8 @@
+public fn add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
+
+public fn main() -> int32 {
+    int32 value = add(1);
+    return value;
+}

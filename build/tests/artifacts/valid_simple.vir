@@ -1,0 +1,36 @@
+module {
+  fn add(a:int32, b:int32) -> int32 {
+    locals:
+      %l0 a:int32 [param#0]
+      %l1 b:int32 [param#1]
+    blocks:
+      bb0 (entry):
+        %v0 = load %l0 : int32
+        %v1 = load %l1 : int32
+        %v2 = add %v0, %v1 : int32
+        ret %v2 : int32
+  }
+  fn main() -> int32 {
+    locals:
+      %l0 x:int32
+      %l1 text:string
+      %l2 total:int32
+    blocks:
+      bb0 (entry):
+        %v0 = const int32 5
+        store %l0, %v0 : int32
+        %v1 = load %l0 : int32
+        %v2 = convert %v1 : int32 -> string [to_string]
+        store %l1, %v2 : string
+        %v3 = load %l1 : string
+        call print [builtin](%v3 : string)
+        %v4 = load %l0 : int32
+        %v5 = const int32 2
+        %v6 = call add(%v4 : int32, %v5 : int32) -> int32
+        store %l2, %v6 : int32
+        %v7 = load %l2 : int32
+        call print [builtin](%v7 : int32)
+        %v8 = const int32 0
+        ret %v8 : int32
+  }
+}

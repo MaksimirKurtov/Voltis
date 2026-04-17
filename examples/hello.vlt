@@ -1,7 +1,21 @@
-public fn main() -> int32 {
-    print("Hello World");
+public fn add(int32 a, int32 b) -> int32 {
+    return a + b;
+}
 
-    system("pause");
+public fn main() -> int32 {
+    int32 speed = 10;
+    float64 precise = 12.75;
+    string text = speed.ToString();
+    print("speed as text: " + text);
+
+    int32 total = add(speed, 5);
+    print(total);
+
+    if ((total > 10) and true) {
+        print(precise.Round().ToInt32());
+    } else {
+        print("small");
+    }
 
     return 0;
 }

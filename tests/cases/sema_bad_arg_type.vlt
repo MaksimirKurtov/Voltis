@@ -1,0 +1,8 @@
+public fn takesInt(int32 value) -> int32 {
+    return value;
+}
+
+public fn main() -> int32 {
+    int32 result = takesInt("hello");
+    return result;
+}

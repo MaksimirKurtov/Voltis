@@ -1,0 +1,8 @@
+voltis.valid.default_compile 1 0.209224
+voltis.valid.emit_vir 1 0.0545382
+voltis.failure.parser_missing_semicolon 1 0.0568359
+voltis.failure.undefined_symbol 1 0.0537623
+voltis.failure.bad_arg_count 1 0.0538585
+voltis.failure.bad_arg_type 1 0.051456
+voltis.failure.bad_conversion 1 0.0522714
+---
