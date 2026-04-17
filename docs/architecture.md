@@ -12,9 +12,8 @@ Voltis source (.vlt)
   -> Semantic analysis (subset)
   -> Typed VIR lowering
   -> Backend abstraction (IBackend)
-  -> LLVM IR text
-  -> Native object emission via clang (`--emit-obj` or default path)
-  -> Native executable link stage via clang + voltis_runtime (default path)
+  -> Direct Windows x64 PE executable output (default path)
+  -> LLVM IR text (`--emit-llvm`)
 ```
 
 Temporary bootstrap mode (explicit only):
@@ -69,25 +68,24 @@ Voltis source (.vlt)
 - LLVM backend module that emits **LLVM IR text** (`BackendOutputKind::LlvmIrText`)
 - CLI production path uses semantic -> VIR -> backend flow and can emit:
   - LLVM IR text (`--emit-llvm`)
-  - native object (`--emit-obj`)
   - native executable (default mode)
-- runtime library target `voltis_runtime` for backend helper symbols
+- direct Windows PE backend for self-contained native output
+
+Direct PE backend coverage currently includes `int32`, `bool`, `string`, and `float64` for the supported example paths.
 
 **Not implemented yet:**
 
-- direct object emission from backend internals (today object generation is delegated to clang from emitted LLVM IR text)
-- explicit lld-link/link.exe orchestration owned independently from clang driver
+- explicit lld-link/link.exe orchestration owned independently from the direct backend
 - DLL workflow (`.dll/.lib`) on production path
 - optimization pipeline between VIR and LLVM lowering
 
 ## 3) What remains for full native toolchain maturity
 
-Current repository can produce native objects/executables from Voltis without C++ transpilation. Remaining milestones are:
+Current repository can produce native executables from Voltis without C++ transpilation. Remaining milestones are:
 
-1. Move from clang-driven object generation to dedicated LLVM backend integration APIs (or custom COFF backend milestone path).
+1. Harden the direct PE backend coverage for more types and operations.
 2. Add explicit linker strategy controls (`lld-link`/`link.exe`) and import-library/DLL support.
-3. Harden runtime ABI and memory ownership for string-producing helpers.
-4. Add optimization passes and richer backend validation coverage.
+3. Add optimization passes and richer backend validation coverage.
 
 Bootstrap C++ mode remains temporary scaffolding and is not required for the default production-directed compile path.
 

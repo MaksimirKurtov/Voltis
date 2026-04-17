@@ -12,13 +12,14 @@ It follows the whitepaper direction, but it is not the full language/toolchain y
 3. Semantic analysis (subset checks)
 4. Typed lowering (AST -> VIR)
 5. Backend abstraction (`IBackend`)
-6. LLVM IR text backend (`.ll`)
-7. Native object emission (`.obj/.o`) from LLVM IR via `clang`
-8. Native executable link stage using object + `voltis_runtime`
+6. Direct Windows x64 PE backend (native executable output)
+7. LLVM IR text backend (`.ll`) for inspection/debugging
 
 There is also an explicit temporary path:
 
 - `--bootstrap-cpp`: AST -> generated C++17 -> host C++ compiler (optional)
+
+The direct native backend currently covers the subset exercised by the bundled examples: `int32`, `bool`, `string`, and `float64` with the supported conversions and comparisons.
 
 ## Implemented vs scaffolded status
 
@@ -28,7 +29,7 @@ There is also an explicit temporary path:
 | VIR | **Implemented for subset**: typed VIR model (`src/vir.*`) and lowering from semantic output (`src/lowering.*`) |
 | Backend abstraction + LLVM | **Implemented boundary** (`src/backend.h`) + **implemented LLVM IR text backend** (`src/backend_llvm_ir.*`) |
 | Runtime library | **Implemented** (`src/voltis_runtime.cpp`) as `voltis_runtime` CMake target |
-| Native `.obj/.exe` generation from VIR backend flow | **Implemented**: `--emit-obj` and default native executable flow via clang |
+| Native `.exe` generation from VIR backend flow | **Implemented**: direct Windows PE backend with default native executable output |
 
 ## Supported Voltis subset (actual parser/sema subset)
 
@@ -130,11 +131,6 @@ voltisc examples/hello.vlt --emit-vir
 voltisc examples/hello.vlt --emit-llvm -o hello.ll
 ```
 
-### Emit native object file
-```bash
-voltisc examples/hello.vlt --emit-obj -o hello.obj
-```
-
 ### Temporary bootstrap C++ path (scaffolding only)
 ```bash
 voltisc examples/hello.vlt --bootstrap-cpp --no-link
@@ -151,9 +147,4 @@ $env:VOLTIS_CXX = "g++"
 
 ## Native toolchain requirements
 
-The production path depends on LLVM/clang tools and the runtime library:
-
-1. `clang` must be available on `PATH` (or provided via `VOLTIS_CLANG`)
-2. `voltis_runtime` must be built and discoverable (or provided via `VOLTIS_RUNTIME_LIB`)
-
-If toolchain/runtime requirements are missing, `voltisc` reports a clear native-stage diagnostic and exits non-zero. In that case, use `--emit-llvm` or `--emit-vir`.
+The default production path now emits a Windows PE executable directly. No external clang/LLVM toolchain is required for normal compilation. Use `--emit-llvm` or `--emit-vir` when you want text artifacts for debugging.

@@ -1,3 +1,4 @@
+#include "backend_pe_x64.h"
 #include "backend_llvm_ir.h"
 #include "codegen.h"
 #include "lexer.h"
@@ -57,7 +58,6 @@ struct CliOptions {
     std::optional<fs::path> emitCppPath;
     bool emitVir = false;
     bool emitLlvm = false;
-    bool emitObj = false;
     bool noLink = false;
     bool bootstrapCpp = false;
 };
@@ -163,12 +163,11 @@ static NativeToolchain resolveNativeToolchain(const fs::path& executablePath, bo
 
 static void printUsage() {
     std::cout << "voltisc <input.vlt> [options]\n"
-              << "Default: native compile (LLVM IR -> object -> executable) when clang/LLVM toolchain is available.\n"
+              << "Default: native compile to a Windows x64 PE executable.\n"
               << "Options:\n"
               << "  -o <path>          Output artifact path (single artifact mode or default executable)\n"
               << "  --emit-vir         Emit VIR text (.vir)\n"
               << "  --emit-llvm        Emit LLVM IR text (.ll)\n"
-              << "  --emit-obj         Emit native object (.obj/.o) via clang from LLVM IR\n"
               << "  --bootstrap-cpp    Use temporary C++ bootstrap backend (explicit only)\n"
               << "  --emit-cpp <path>  C++ output path (requires --bootstrap-cpp)\n"
               << "  --no-link          Skip host C++ compile (requires --bootstrap-cpp)\n";
@@ -200,10 +199,6 @@ static CliOptions parseCliOptions(int argc, char** argv) {
             options.emitLlvm = true;
             continue;
         }
-        if (arg == "--emit-obj") {
-            options.emitObj = true;
-            continue;
-        }
         if (arg == "--bootstrap-cpp") {
             options.bootstrapCpp = true;
             continue;
@@ -231,14 +226,13 @@ static CliOptions parseCliOptions(int argc, char** argv) {
     if (options.emitCppPath.has_value() && !options.bootstrapCpp) {
         throw std::runtime_error("--emit-cpp requires --bootstrap-cpp");
     }
-    if (options.bootstrapCpp && (options.emitVir || options.emitLlvm || options.emitObj)) {
-        throw std::runtime_error("--bootstrap-cpp cannot be combined with --emit-vir/--emit-llvm/--emit-obj");
+    if (options.bootstrapCpp && (options.emitVir || options.emitLlvm)) {
+        throw std::runtime_error("--bootstrap-cpp cannot be combined with --emit-vir/--emit-llvm");
     }
 
     const int explicitEmitCount =
         static_cast<int>(options.emitVir) +
-        static_cast<int>(options.emitLlvm) +
-        static_cast<int>(options.emitObj);
+        static_cast<int>(options.emitLlvm);
 
     if (options.outputPath.has_value() && explicitEmitCount > 1) {
         throw std::runtime_error("-o cannot be used when emitting multiple artifacts");
@@ -297,7 +291,35 @@ int main(int argc, char** argv) {
 
         std::cout << "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction.\n";
 
-        const bool defaultNativeExe = !options.emitVir && !options.emitLlvm && !options.emitObj;
+        const bool defaultNativeExe = !options.emitVir && !options.emitLlvm;
+        if (defaultNativeExe) {
+            auto nativeBackend = createPeX64Backend();
+            BackendOptions nativeOptions;
+            nativeOptions.output = BackendOutputKind::Executable;
+            nativeOptions.track = BackendTrack::ProductionDirected;
+            nativeOptions.moduleName = options.inputPath.stem().string();
+
+            BackendResult nativeResult = nativeBackend->compile(lowered.module, nativeOptions);
+            if (nativeResult.ok()) {
+                const BackendArtifact* exeArtifact = nullptr;
+                for (const auto& artifact : nativeResult.artifacts) {
+                    if (artifact.kind == BackendOutputKind::Executable) {
+                        exeArtifact = &artifact;
+                        break;
+                    }
+                }
+                if (!exeArtifact) {
+                    throw std::runtime_error("Direct PE backend produced no executable artifact");
+                }
+
+                const fs::path executablePath = options.outputPath.value_or(defaultExecutablePath(options.inputPath));
+                writeFile(executablePath, exeArtifact->payload);
+                std::cout << "Built executable: " << executablePath.string() << "\n";
+                return 0;
+            }
+            nativeResult.diagnostics.print(std::cerr);
+            return 1;
+        }
 
         if (options.emitVir) {
             const fs::path virPath = options.outputPath.value_or(defaultArtifactPath(options.inputPath, ".vir"));
@@ -305,11 +327,7 @@ int main(int argc, char** argv) {
             std::cout << "Emitted VIR: " << virPath.string() << "\n";
         }
 
-        const bool needsLlvmIr = options.emitLlvm || options.emitObj || defaultNativeExe;
-        std::optional<std::string> llvmIrText;
-        std::optional<fs::path> emittedLlvmPath;
-
-        if (needsLlvmIr) {
+        if (options.emitLlvm) {
             auto backend = createLlvmIrTextBackend();
             BackendOptions backendOptions;
             backendOptions.output = BackendOutputKind::LlvmIrText;
@@ -333,67 +351,10 @@ int main(int argc, char** argv) {
             if (!llvmArtifact) {
                 throw std::runtime_error("LLVM backend produced no LLVM IR artifact");
             }
-            llvmIrText = llvmArtifact->payload;
-        }
 
-        if (options.emitLlvm) {
             const fs::path llvmPath = options.outputPath.value_or(defaultArtifactPath(options.inputPath, ".ll"));
-            writeFile(llvmPath, *llvmIrText);
-            emittedLlvmPath = llvmPath;
+            writeFile(llvmPath, llvmArtifact->payload);
             std::cout << "Emitted LLVM IR: " << llvmPath.string() << "\n";
-        }
-
-        if (options.emitObj || defaultNativeExe) {
-            const NativeToolchain toolchain = resolveNativeToolchain(argv[0], defaultNativeExe);
-
-            fs::path llvmInputPath;
-            bool temporaryLlvmFile = false;
-            if (emittedLlvmPath.has_value()) {
-                llvmInputPath = *emittedLlvmPath;
-            } else {
-                llvmInputPath = defaultArtifactPath(options.inputPath, ".native.ll");
-                writeFile(llvmInputPath, *llvmIrText);
-                temporaryLlvmFile = true;
-            }
-
-            fs::path objectPath;
-            bool temporaryObjectFile = false;
-            if (options.emitObj) {
-                objectPath = options.outputPath.value_or(defaultArtifactPath(options.inputPath, objectExtension()));
-            } else {
-                objectPath = defaultArtifactPath(options.inputPath, ".native" + objectExtension());
-                temporaryObjectFile = true;
-            }
-
-            const std::string compileObjCommand =
-                shellQuote(toolchain.clangExecutable) +
-                " -x ir -c " + shellQuote(llvmInputPath.string()) +
-                " -o " + shellQuote(objectPath.string());
-            runCommandOrThrow(compileObjCommand, "LLVM IR -> object compilation failed");
-
-            if (options.emitObj) {
-                std::cout << "Emitted object: " << objectPath.string() << "\n";
-            }
-
-            if (defaultNativeExe) {
-                const fs::path executablePath = options.outputPath.value_or(defaultExecutablePath(options.inputPath));
-                const std::string linkCommand =
-                    shellQuote(toolchain.clangExecutable) +
-                    " " + shellQuote(objectPath.string()) +
-                    " " + shellQuote(toolchain.runtimeLibraryPath->string()) +
-                    " -o " + shellQuote(executablePath.string());
-                runCommandOrThrow(linkCommand, "Native link stage failed");
-                std::cout << "Built executable: " << executablePath.string() << "\n";
-            }
-
-            if (temporaryLlvmFile) {
-                std::error_code removeError;
-                fs::remove(llvmInputPath, removeError);
-            }
-            if (temporaryObjectFile) {
-                std::error_code removeError;
-                fs::remove(objectPath, removeError);
-            }
         }
 
         return 0;

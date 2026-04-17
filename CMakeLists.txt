@@ -19,6 +19,7 @@ add_executable(voltisc
     src/vir.cpp
     src/lowering.cpp
     src/codegen.cpp
+    src/backend_pe_x64.cpp
     src/backend_llvm_ir.cpp
 )
 

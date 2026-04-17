@@ -1681,7 +1681,7 @@ This section explains the real native output path in concrete terms.
 
 ## 29.1 Object file target
 
-First real native output should be **COFF object files** on Windows.
+The longer-term backend target remains **COFF object files** on Windows.
 
 Why:
 
@@ -1718,8 +1718,7 @@ Compiler driver should support:
 
 ```text
 voltisc main.vlt -o app.exe
-voltisc main.vlt --emit-obj
-voltisc main.vlt --emit-ir
+voltisc main.vlt --emit-vir
 voltisc main.vlt --emit-llvm
 ```
 
@@ -1885,4 +1884,3 @@ When contributing to Voltis, follow these rules:
 # 35. Final vision statement
 
 > **Voltis is a Windows-strong, systems-capable, readable native language with C-like reach, C#-style declarations, Python-like clarity, safer defaults than C++, and a true compiled backend that produces real native binaries.**
-
