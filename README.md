@@ -12,7 +12,9 @@ It follows the whitepaper direction, but it is not the full language/toolchain y
 3. Semantic analysis (subset checks)
 4. Typed lowering (AST -> VIR)
 5. Backend abstraction (`IBackend`)
-6. LLVM IR text backend (`.ll`) as the default production-directed artifact
+6. LLVM IR text backend (`.ll`)
+7. Native object emission (`.obj/.o`) from LLVM IR via `clang`
+8. Native executable link stage using object + `voltis_runtime`
 
 There is also an explicit temporary path:
 
@@ -25,7 +27,8 @@ There is also an explicit temporary path:
 | Semantic analysis | **Implemented for subset**: function registration, scoped symbols, type checks for expressions/assignments/returns/calls, conversion-member validation |
 | VIR | **Implemented for subset**: typed VIR model (`src/vir.*`) and lowering from semantic output (`src/lowering.*`) |
 | Backend abstraction + LLVM | **Implemented boundary** (`src/backend.h`) + **implemented LLVM IR text backend** (`src/backend_llvm_ir.*`) |
-| Native `.obj/.exe` generation from VIR backend flow | **Not implemented yet** (no object emission/link stage wired in production-directed path) |
+| Runtime library | **Implemented** (`src/voltis_runtime.cpp`) as `voltis_runtime` CMake target |
+| Native `.obj/.exe` generation from VIR backend flow | **Implemented**: `--emit-obj` and default native executable flow via clang |
 
 ## Supported Voltis subset (actual parser/sema subset)
 
@@ -112,7 +115,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## Using the compiler
 
-### Production-directed default (emit LLVM IR text)
+### Production-directed default (build native executable)
 ```bash
 voltisc examples/hello.vlt
 ```
@@ -125,6 +128,11 @@ voltisc examples/hello.vlt --emit-vir
 ### Emit LLVM IR text to custom path
 ```bash
 voltisc examples/hello.vlt --emit-llvm -o hello.ll
+```
+
+### Emit native object file
+```bash
+voltisc examples/hello.vlt --emit-obj -o hello.obj
 ```
 
 ### Temporary bootstrap C++ path (scaffolding only)
@@ -141,13 +149,11 @@ $env:VOLTIS_CXX = "clang++"
 $env:VOLTIS_CXX = "g++"
 ```
 
-## What is still missing for true native `.obj/.exe` generation
+## Native toolchain requirements
 
-From the production-directed VIR -> backend path, the following is still required:
+The production path depends on LLVM/clang tools and the runtime library:
 
-1. LLVM backend object emission (or another backend that emits COFF directly)
-2. Runtime implementation/library packaging for referenced helper symbols (print/string conversions/etc.)
-3. Linker integration (`lld-link`/`link.exe`) owned by the compiler flow
-4. CLI artifact modes for `.obj` and `.exe` from the native backend path
+1. `clang` must be available on `PATH` (or provided via `VOLTIS_CLANG`)
+2. `voltis_runtime` must be built and discoverable (or provided via `VOLTIS_RUNTIME_LIB`)
 
-Current default output is LLVM IR text (`.ll`), not a linked native executable.
+If toolchain/runtime requirements are missing, `voltisc` reports a clear native-stage diagnostic and exits non-zero. In that case, use `--emit-llvm` or `--emit-vir`.

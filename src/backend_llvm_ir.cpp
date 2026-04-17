@@ -248,24 +248,24 @@ private:
             const EmittedValue arg = lookupValue(state, inst.args[i], argType, location, "builtin print");
             switch (argType.kind) {
                 case vir::TypeKind::Int32:
-                    requireDeclaration("declare void @vt.print.i32(i32)");
-                    out << "  call void @vt.print.i32(i32 " << arg.operand << ")\n";
+                    requireDeclaration("declare void @vt_print_i32(i32)");
+                    out << "  call void @vt_print_i32(i32 " << arg.operand << ")\n";
                     break;
                 case vir::TypeKind::Float32:
-                    requireDeclaration("declare void @vt.print.f32(float)");
-                    out << "  call void @vt.print.f32(float " << arg.operand << ")\n";
+                    requireDeclaration("declare void @vt_print_f32(float)");
+                    out << "  call void @vt_print_f32(float " << arg.operand << ")\n";
                     break;
                 case vir::TypeKind::Float64:
-                    requireDeclaration("declare void @vt.print.f64(double)");
-                    out << "  call void @vt.print.f64(double " << arg.operand << ")\n";
+                    requireDeclaration("declare void @vt_print_f64(double)");
+                    out << "  call void @vt_print_f64(double " << arg.operand << ")\n";
                     break;
                 case vir::TypeKind::Bool:
-                    requireDeclaration("declare void @vt.print.bool(i1)");
-                    out << "  call void @vt.print.bool(i1 " << arg.operand << ")\n";
+                    requireDeclaration("declare void @vt_print_bool(i1)");
+                    out << "  call void @vt_print_bool(i1 " << arg.operand << ")\n";
                     break;
                 case vir::TypeKind::String:
-                    requireDeclaration("declare void @vt.print.str(i8*)");
-                    out << "  call void @vt.print.str(i8* " << arg.operand << ")\n";
+                    requireDeclaration("declare void @vt_print_str(i8*)");
+                    out << "  call void @vt_print_str(i8* " << arg.operand << ")\n";
                     break;
                 default:
                     diagnostics_.error(location, "backend-llvm: unsupported print argument type");
@@ -433,8 +433,8 @@ private:
         switch (inst.op) {
             case vir::BinaryOp::Add:
                 if (inst.type.kind == vir::TypeKind::String) {
-                    requireDeclaration("declare i8* @vt.str.concat(i8*, i8*)");
-                    out << "  " << resultName << " = call i8* @vt.str.concat(i8* "
+                    requireDeclaration("declare i8* @vt_str_concat(i8*, i8*)");
+                    out << "  " << resultName << " = call i8* @vt_str_concat(i8* "
                         << left.operand << ", i8* " << right.operand << ")\n";
                 } else if (!emitNumericArithmetic("add", "fadd")) {
                     diagnostics_.error(location, "backend-llvm: add is unsupported for this type");
@@ -466,13 +466,13 @@ private:
             case vir::BinaryOp::Equal:
             case vir::BinaryOp::NotEqual:
                 if (operandType.kind == vir::TypeKind::String) {
-                    requireDeclaration("declare i1 @vt.str.eq(i8*, i8*)");
+                    requireDeclaration("declare i1 @vt_str_eq(i8*, i8*)");
                     if (inst.op == vir::BinaryOp::Equal) {
-                        out << "  " << resultName << " = call i1 @vt.str.eq(i8* "
+                        out << "  " << resultName << " = call i1 @vt_str_eq(i8* "
                             << left.operand << ", i8* " << right.operand << ")\n";
                     } else {
                         const std::string eqTemp = createTempName(state);
-                        out << "  " << eqTemp << " = call i1 @vt.str.eq(i8* "
+                        out << "  " << eqTemp << " = call i1 @vt_str_eq(i8* "
                             << left.operand << ", i8* " << right.operand << ")\n";
                         out << "  " << resultName << " = xor i1 " << eqTemp << ", true\n";
                     }
@@ -547,7 +547,7 @@ private:
                 state.values[inst.result.index] = EmittedValue{inst.toType, resultName};
                 return;
             case vir::ConversionKind::ToInt32FromStringParse:
-                emitRuntimeCall("declare i32 @vt.str.to_i32(i8*)", "@vt.str.to_i32");
+                emitRuntimeCall("declare i32 @vt_str_to_i32(i8*)", "@vt_str_to_i32");
                 return;
             case vir::ConversionKind::ToInt32FromBool:
                 out << "  " << resultName << " = zext i1 " << input.operand << " to i32\n";
@@ -573,7 +573,7 @@ private:
                     state.values[inst.result.index] = EmittedValue{inst.toType, input.operand};
                     return;
                 }
-                emitRuntimeCall("declare float @vt.str.to_f32(i8*)", "@vt.str.to_f32");
+                emitRuntimeCall("declare float @vt_str_to_f32(i8*)", "@vt_str_to_f32");
                 return;
             case vir::ConversionKind::ToFloat64:
                 if (inst.fromType.kind == vir::TypeKind::Int32) {
@@ -595,7 +595,7 @@ private:
                     state.values[inst.result.index] = EmittedValue{inst.toType, input.operand};
                     return;
                 }
-                emitRuntimeCall("declare double @vt.str.to_f64(i8*)", "@vt.str.to_f64");
+                emitRuntimeCall("declare double @vt_str_to_f64(i8*)", "@vt_str_to_f64");
                 return;
             case vir::ConversionKind::ToBool:
                 if (inst.fromType.kind == vir::TypeKind::Bool) {
@@ -617,7 +617,7 @@ private:
                     state.values[inst.result.index] = EmittedValue{inst.toType, resultName};
                     return;
                 }
-                emitRuntimeCall("declare i1 @vt.str.to_bool(i8*)", "@vt.str.to_bool");
+                emitRuntimeCall("declare i1 @vt_str_to_bool(i8*)", "@vt_str_to_bool");
                 return;
             case vir::ConversionKind::ToString:
                 switch (inst.fromType.kind) {
@@ -625,16 +625,16 @@ private:
                         state.values[inst.result.index] = EmittedValue{inst.toType, input.operand};
                         return;
                     case vir::TypeKind::Int32:
-                        emitRuntimeCall("declare i8* @vt.to_string.i32(i32)", "@vt.to_string.i32");
+                        emitRuntimeCall("declare i8* @vt_to_string_i32(i32)", "@vt_to_string_i32");
                         return;
                     case vir::TypeKind::Float32:
-                        emitRuntimeCall("declare i8* @vt.to_string.f32(float)", "@vt.to_string.f32");
+                        emitRuntimeCall("declare i8* @vt_to_string_f32(float)", "@vt_to_string_f32");
                         return;
                     case vir::TypeKind::Float64:
-                        emitRuntimeCall("declare i8* @vt.to_string.f64(double)", "@vt.to_string.f64");
+                        emitRuntimeCall("declare i8* @vt_to_string_f64(double)", "@vt_to_string_f64");
                         return;
                     case vir::TypeKind::Bool:
-                        emitRuntimeCall("declare i8* @vt.to_string.bool(i1)", "@vt.to_string.bool");
+                        emitRuntimeCall("declare i8* @vt_to_string_bool(i1)", "@vt_to_string_bool");
                         return;
                     default:
                         break;

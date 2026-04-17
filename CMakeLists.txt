@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 
+add_library(voltis_runtime STATIC
+    src/voltis_runtime.cpp
+)
+
 add_executable(voltisc
     src/main.cpp
     src/diagnostics.cpp
@@ -19,6 +23,7 @@ add_executable(voltisc
 )
 
 target_include_directories(voltisc PRIVATE src)
+add_dependencies(voltisc voltis_runtime)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

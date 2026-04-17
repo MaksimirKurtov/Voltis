@@ -12,7 +12,9 @@ Voltis source (.vlt)
   -> Semantic analysis (subset)
   -> Typed VIR lowering
   -> Backend abstraction (IBackend)
-  -> LLVM IR text artifact (.ll)
+  -> LLVM IR text
+  -> Native object emission via clang (`--emit-obj` or default path)
+  -> Native executable link stage via clang + voltis_runtime (default path)
 ```
 
 Temporary bootstrap mode (explicit only):
@@ -65,25 +67,29 @@ Voltis source (.vlt)
 
 - backend boundary (`IBackend`, backend options/results/artifacts)
 - LLVM backend module that emits **LLVM IR text** (`BackendOutputKind::LlvmIrText`)
-- CLI default path uses semantic -> VIR -> backend flow
+- CLI production path uses semantic -> VIR -> backend flow and can emit:
+  - LLVM IR text (`--emit-llvm`)
+  - native object (`--emit-obj`)
+  - native executable (default mode)
+- runtime library target `voltis_runtime` for backend helper symbols
 
 **Not implemented yet:**
 
-- object-file emission from backend flow (`.obj`)
-- executable emission from backend flow (`.exe/.dll`)
-- integrated linker stage in production-directed path
-- packaged runtime implementation for helper symbols referenced by emitted IR
+- direct object emission from backend internals (today object generation is delegated to clang from emitted LLVM IR text)
+- explicit lld-link/link.exe orchestration owned independently from clang driver
+- DLL workflow (`.dll/.lib`) on production path
+- optimization pipeline between VIR and LLVM lowering
 
-## 3) What remains for true native `.obj/.exe` generation
+## 3) What remains for full native toolchain maturity
 
-To satisfy the whitepaper’s native backend goal in this repository:
+Current repository can produce native objects/executables from Voltis without C++ transpilation. Remaining milestones are:
 
-1. Add backend output mode for object emission (LLVM object emission or direct COFF writer).
-2. Provide/ship runtime implementation for helper calls used by generated IR (print/string conversion helpers).
-3. Integrate linker orchestration (`lld-link`/`link.exe`) into compiler driver.
-4. Add stable CLI artifact modes for `.obj` and final `.exe/.dll` on the production-directed path.
+1. Move from clang-driven object generation to dedicated LLVM backend integration APIs (or custom COFF backend milestone path).
+2. Add explicit linker strategy controls (`lld-link`/`link.exe`) and import-library/DLL support.
+3. Harden runtime ABI and memory ownership for string-producing helpers.
+4. Add optimization passes and richer backend validation coverage.
 
-Until then, native executable generation is only available through the **temporary bootstrap C++ mode**, not through the primary VIR backend path.
+Bootstrap C++ mode remains temporary scaffolding and is not required for the default production-directed compile path.
 
 ## 4) Whitepaper alignment and scope guard
 
@@ -93,7 +99,7 @@ Whitepaper target pipeline remains:
 Lexer -> Parser -> AST -> Semantic analysis -> Typed IR -> Optimization -> Backend lowering -> Object generation -> Link -> PE output
 ```
 
-Current branch is aligned directionally (frontend + typed VIR + backend boundary exist), but still pre-native-output.
+Current branch is aligned directionally and now includes first native object/executable generation through the production-directed pipeline, with backend/linker hardening still in progress.
 
 ## 5) Implemented syntax subset guard (docs/examples)
 
@@ -105,4 +111,4 @@ The active parser subset in this repo is function-centric and semicolon-based:
 - primitives: `int32`, `float32`, `float64`, `string`, `bool`, `void`
 - `if/else`, `return`, local declarations/assignment, direct calls, conversion members
 
-This document intentionally avoids claiming support for classes, modules, extern interop syntax, or native binary emission from the primary backend path.
+This document intentionally avoids claiming support for classes, modules, extern interop syntax, or full backend maturity (DLL/import-lib, optimizer, custom COFF backend), even though native exe generation is now available.

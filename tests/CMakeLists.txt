@@ -15,6 +15,7 @@ function(add_voltis_case test_name case_name)
 endfunction()
 
 add_voltis_case(voltis.valid.default_compile valid-default)
+add_voltis_case(voltis.valid.emit_obj valid-emit-obj)
 add_voltis_case(voltis.valid.emit_vir valid-emit-vir)
 add_voltis_case(voltis.failure.parser_missing_semicolon parser-missing-semicolon)
 add_voltis_case(voltis.failure.undefined_symbol sema-undefined-symbol)
