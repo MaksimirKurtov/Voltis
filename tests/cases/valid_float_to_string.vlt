@@ -1,0 +1,5 @@
+public fn main() -> int32 {
+    float64 value = 12.75;
+    print("value: " + value.ToString());
+    return 0;
+}

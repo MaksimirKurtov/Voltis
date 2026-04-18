@@ -7,9 +7,9 @@ public fn main() -> int32 {
     int32 speed = 15;
     float64 precise = 12.755;
     print("speed: " + speed.ToString());
-    print("precise: " + precise.Round().ToInt32().ToString());
-
-    int32 total = add(speed, 5);
+    print("precise: " + precise.ToString());
+    float64 total = precise + speed.ToFloat64();
+  
     print("total: " + total.ToString());
 
     if (total > 10) {

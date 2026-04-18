@@ -1,0 +1,13 @@
+public fn main() -> int32 {
+    float64 precise = 3.6;
+    int32 rounded = precise.Round().ToInt32();
+    bool enabled = "true".ToBool();
+
+    if (enabled and (rounded > 0)) {
+        print(rounded.ToString());
+    } else {
+        print("disabled");
+    }
+
+    return 0;
+}

@@ -1,0 +1,8 @@
+public fn main() -> int32 {
+    if (1) {
+        print("bad");
+    } else {
+        print("ok");
+    }
+    return 0;
+}

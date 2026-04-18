@@ -1,0 +1,8 @@
+public fn main() -> int32 {
+    int32 x = 7;
+    float32 f32 = x.ToFloat32();
+    float64 f64 = x;
+    print("f32: " + f32.ToString());
+    print("f64: " + f64.ToString());
+    return 0;
+}

@@ -1,0 +1,5 @@
+public fn main() -> int32 {
+    int32 x = missingFn(1);
+    print(x);
+    return 0;
+}

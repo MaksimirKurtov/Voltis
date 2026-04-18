@@ -710,6 +710,7 @@ private:
 
 static bool isSupportedType(const vir::Type& type) {
     return type.kind == vir::TypeKind::Int32 ||
+           type.kind == vir::TypeKind::Float32 ||
            type.kind == vir::TypeKind::Float64 ||
            type.kind == vir::TypeKind::Bool ||
            type.kind == vir::TypeKind::String ||
@@ -762,6 +763,7 @@ private:
         image_.imports().addImport("msvcrt.dll", "strlen");
         image_.imports().addImport("msvcrt.dll", "strcmp");
         image_.imports().addImport("msvcrt.dll", "strtol");
+        image_.imports().addImport("msvcrt.dll", "strtod");
     }
 
     bool emitModule(const vir::Module& module, DiagnosticBag& diagnostics) {
@@ -984,6 +986,7 @@ private:
                         asm_.emitU32(static_cast<std::uint32_t>(disp));
                     }
                     break;
+                case vir::TypeKind::Float32:
                 case vir::TypeKind::Float64:
                     if (i == 0) {
                         asm_.emitMovsdMemFromXmm0(GpReg::RBP, disp);
@@ -1055,6 +1058,14 @@ private:
                 asm_.emitMovMemFromRax64(GpReg::RBP, disp);
                 return true;
             }
+            case vir::TypeKind::Float32:
+                if (!std::holds_alternative<float>(inst.constant.value)) {
+                    diagnostics.error({}, "direct pe backend: invalid float32 constant");
+                    return false;
+                }
+                asm_.emitMovRaxImm64(doubleToBits(static_cast<double>(std::get<float>(inst.constant.value))));
+                asm_.emitMovMemFromRax64(GpReg::RBP, disp);
+                return true;
             case vir::TypeKind::Float64:
                 if (!std::holds_alternative<double>(inst.constant.value)) {
                     diagnostics.error({}, "direct pe backend: invalid float64 constant");
@@ -1084,6 +1095,7 @@ private:
                 asm_.emitMovEaxFromMem32(GpReg::RBP, localDisp);
                 asm_.emitMovMemFromEax32(GpReg::RBP, valueDisp);
                 return true;
+            case vir::TypeKind::Float32:
             case vir::TypeKind::Float64:
                 asm_.emitMovRaxFromMem64(GpReg::RBP, localDisp);
                 asm_.emitMovMemFromRax64(GpReg::RBP, valueDisp);
@@ -1113,6 +1125,7 @@ private:
                 asm_.emitMovEaxFromMem32(GpReg::RBP, valueDisp);
                 asm_.emitMovMemFromEax32(GpReg::RBP, localDisp);
                 return true;
+            case vir::TypeKind::Float32:
             case vir::TypeKind::Float64:
                 asm_.emitMovRaxFromMem64(GpReg::RBP, valueDisp);
                 asm_.emitMovMemFromRax64(GpReg::RBP, localDisp);
@@ -1173,7 +1186,7 @@ private:
 
         switch (inst.op) {
             case vir::BinaryOp::Add:
-                if (inst.type.kind == vir::TypeKind::Float64) {
+                if (inst.type.kind == vir::TypeKind::Float32 || inst.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitAddsdXmm0Xmm1();
@@ -1193,7 +1206,7 @@ private:
                 diagnostics.error({}, "direct pe backend: add only supports int32 and string");
                 return false;
             case vir::BinaryOp::Subtract:
-                if (inst.type.kind == vir::TypeKind::Float64) {
+                if (inst.type.kind == vir::TypeKind::Float32 || inst.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitSubsdXmm0Xmm1();
@@ -1210,7 +1223,7 @@ private:
                 asm_.emitMovMemFromEax32(GpReg::RBP, resultDisp);
                 return true;
             case vir::BinaryOp::Multiply:
-                if (inst.type.kind == vir::TypeKind::Float64) {
+                if (inst.type.kind == vir::TypeKind::Float32 || inst.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitMulsdXmm0Xmm1();
@@ -1227,7 +1240,7 @@ private:
                 asm_.emitMovMemFromEax32(GpReg::RBP, resultDisp);
                 return true;
             case vir::BinaryOp::Divide:
-                if (inst.type.kind == vir::TypeKind::Float64) {
+                if (inst.type.kind == vir::TypeKind::Float32 || inst.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitDivsdXmm0Xmm1();
@@ -1249,7 +1262,7 @@ private:
                 if (inst.type.kind == vir::TypeKind::String) {
                     return emitStringCompare(inst.op, leftDisp, rightDisp, resultDisp, diagnostics);
                 }
-                if (inst.type.kind == vir::TypeKind::Float64) {
+                if (inst.type.kind == vir::TypeKind::Float32 || inst.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitUcomisdXmm0Xmm1();
@@ -1277,7 +1290,8 @@ private:
                     diagnostics.error({}, "direct pe backend: comparison must return bool");
                     return false;
                 }
-                if (left->second.type.kind == vir::TypeKind::Float64 || right->second.type.kind == vir::TypeKind::Float64) {
+                if (left->second.type.kind == vir::TypeKind::Float32 || left->second.type.kind == vir::TypeKind::Float64 ||
+                    right->second.type.kind == vir::TypeKind::Float32 || right->second.type.kind == vir::TypeKind::Float64) {
                     asm_.emitMovsdXmm0FromMem64(GpReg::RBP, leftDisp);
                     asm_.emitMovsdXmm1FromMem64(GpReg::RBP, rightDisp);
                     asm_.emitUcomisdXmm0Xmm1();
@@ -1348,22 +1362,54 @@ private:
                 asm_.emitMovMemFromEax32(GpReg::RBP, resultDisp);
                 return true;
             case vir::ConversionKind::ToFloat32:
-                diagnostics.error({}, "direct pe backend: float32 is not supported yet");
-                return false;
-            case vir::ConversionKind::ToFloat64:
+                if (inst.fromType.kind == vir::TypeKind::String) {
+                    return emitStringToFloat(inputDisp, resultDisp, diagnostics);
+                }
                 if (inst.fromType.kind == vir::TypeKind::Int32 || inst.fromType.kind == vir::TypeKind::Bool) {
                     asm_.emitMovEaxFromMem32(GpReg::RBP, inputDisp);
                     asm_.emitCvtsi2sdXmm0Eax();
                     asm_.emitMovsdMemFromXmm0(GpReg::RBP, resultDisp);
                     return true;
                 }
-                diagnostics.error({}, "direct pe backend: float conversion only supports int32/bool sources");
+                if (inst.fromType.kind == vir::TypeKind::Float32 || inst.fromType.kind == vir::TypeKind::Float64) {
+                    asm_.emitMovRaxFromMem64(GpReg::RBP, inputDisp);
+                    asm_.emitMovMemFromRax64(GpReg::RBP, resultDisp);
+                    return true;
+                }
+                diagnostics.error({}, "direct pe backend: float conversion only supports int32/float32/float64/bool/string sources");
+                return false;
+            case vir::ConversionKind::ImplicitInt32ToFloat32:
+            case vir::ConversionKind::ImplicitInt32ToFloat64:
+                asm_.emitMovEaxFromMem32(GpReg::RBP, inputDisp);
+                asm_.emitCvtsi2sdXmm0Eax();
+                asm_.emitMovsdMemFromXmm0(GpReg::RBP, resultDisp);
+                return true;
+            case vir::ConversionKind::ImplicitFloat32ToFloat64:
+                asm_.emitMovRaxFromMem64(GpReg::RBP, inputDisp);
+                asm_.emitMovMemFromRax64(GpReg::RBP, resultDisp);
+                return true;
+            case vir::ConversionKind::ToFloat64:
+                if (inst.fromType.kind == vir::TypeKind::String) {
+                    return emitStringToFloat(inputDisp, resultDisp, diagnostics);
+                }
+                if (inst.fromType.kind == vir::TypeKind::Int32 || inst.fromType.kind == vir::TypeKind::Bool) {
+                    asm_.emitMovEaxFromMem32(GpReg::RBP, inputDisp);
+                    asm_.emitCvtsi2sdXmm0Eax();
+                    asm_.emitMovsdMemFromXmm0(GpReg::RBP, resultDisp);
+                    return true;
+                }
+                if (inst.fromType.kind == vir::TypeKind::Float32 || inst.fromType.kind == vir::TypeKind::Float64) {
+                    asm_.emitMovRaxFromMem64(GpReg::RBP, inputDisp);
+                    asm_.emitMovMemFromRax64(GpReg::RBP, resultDisp);
+                    return true;
+                }
+                diagnostics.error({}, "direct pe backend: float conversion only supports int32/float32/float64/bool/string sources");
                 return false;
             case vir::ConversionKind::Round:
             case vir::ConversionKind::Floor:
             case vir::ConversionKind::Ceil: {
-                if (inst.fromType.kind != vir::TypeKind::Float64) {
-                    diagnostics.error({}, "direct pe backend: round/floor/ceil only supports float64");
+                if (inst.fromType.kind != vir::TypeKind::Float32 && inst.fromType.kind != vir::TypeKind::Float64) {
+                    diagnostics.error({}, "direct pe backend: round/floor/ceil only supports float32/float64");
                     return false;
                 }
                 asm_.emitMovsdXmm0FromMem64(GpReg::RBP, inputDisp);
@@ -1403,6 +1449,7 @@ private:
                     asm_.emitMovEaxFromMem32(GpReg::RBP, disp);
                     moveIntegerArg(i);
                     break;
+                case vir::TypeKind::Float32:
                 case vir::TypeKind::Float64:
                     moveFloatArg(i, disp);
                     break;
@@ -1431,6 +1478,7 @@ private:
                 case vir::TypeKind::Bool:
                     asm_.emitMovMemFromEax32(GpReg::RBP, resultDisp);
                     return true;
+                case vir::TypeKind::Float32:
                 case vir::TypeKind::Float64:
                     asm_.emitMovsdMemFromXmm0(GpReg::RBP, resultDisp);
                     return true;
@@ -1459,6 +1507,13 @@ private:
                     asm_.emitLeaRegRip(GpReg::RCX, ensureLiteral("%d\n"));
                     asm_.emitMovEaxFromMem32(GpReg::RBP, disp);
                     asm_.emitMovEdxFromEax();
+                    asm_.emitCallIat(importLabel("msvcrt.dll", "printf"));
+                    break;
+                case vir::TypeKind::Float32:
+                case vir::TypeKind::Float64:
+                    asm_.emitLeaRegRip(GpReg::RCX, ensureLiteral("%.15g\n"));
+                    asm_.emitMovRdxFromMem64(GpReg::RBP, disp);
+                    asm_.emitMovsdXmm1FromMem64(GpReg::RBP, disp);
                     asm_.emitCallIat(importLabel("msvcrt.dll", "printf"));
                     break;
                 case vir::TypeKind::Bool:
@@ -1604,6 +1659,22 @@ private:
         return true;
     }
 
+    bool emitStringToFloat(std::int32_t inputDisp, std::int32_t resultDisp, DiagnosticBag& diagnostics) {
+        (void)diagnostics;
+        resetTemps();
+        const std::string okLabel = tempLabel("strtod_ok");
+        asm_.emitMovRcxFromMem64(GpReg::RBP, inputDisp);
+        asm_.emitTestRcxRcx();
+        asm_.emitJccRel32(CondCode::NE, okLabel);
+        asm_.emitLeaRegRip(GpReg::RCX, ensureLiteral(""));
+        markTemp(okLabel);
+        asm_.emitXorEaxEax();
+        asm_.emitMovRdxFromRax64();
+        asm_.emitCallIat(importLabel("msvcrt.dll", "strtod"));
+        asm_.emitMovsdMemFromXmm0(GpReg::RBP, resultDisp);
+        return true;
+    }
+
     bool emitToString(vir::Type fromType, std::int32_t inputDisp, std::int32_t resultDisp, DiagnosticBag& diagnostics) {
         resetTemps();
         if (fromType.kind == vir::TypeKind::String) {
@@ -1626,19 +1697,23 @@ private:
             markTemp(doneLabel);
             return true;
         }
-        if (fromType.kind != vir::TypeKind::Int32) {
-            diagnostics.error({}, "direct pe backend: ToString only supports int32, bool, and string");
-            return false;
-        }
-
         const std::size_t bufferOff = layoutScratch(64);
         const std::size_t lenOff = layoutScratch(0);
         const std::size_t heapOff = layoutScratch(8);
 
         asm_.emitLeaRegRbpDisp(GpReg::RCX, -static_cast<std::int32_t>(bufferOff));
-        asm_.emitLeaRegRip(GpReg::RDX, ensureLiteral("%d"));
-        asm_.emitMovEaxFromMem32(GpReg::RBP, inputDisp);
-        asm_.emitMovR8dFromEax();
+        if (fromType.kind == vir::TypeKind::Int32) {
+            asm_.emitLeaRegRip(GpReg::RDX, ensureLiteral("%d"));
+            asm_.emitMovEaxFromMem32(GpReg::RBP, inputDisp);
+            asm_.emitMovR8dFromEax();
+        } else if (fromType.kind == vir::TypeKind::Float32 || fromType.kind == vir::TypeKind::Float64) {
+            asm_.emitLeaRegRip(GpReg::RDX, ensureLiteral("%.15g"));
+            asm_.emitMovR8FromMem64(GpReg::RBP, inputDisp);
+            asm_.emitMovsdXmm2FromMem64(GpReg::RBP, inputDisp);
+        } else {
+            diagnostics.error({}, "direct pe backend: ToString only supports int32, float32, float64, bool, and string");
+            return false;
+        }
         asm_.emitCallIat(importLabel("msvcrt.dll", "sprintf"));
         asm_.emitMovMemFromEax32(GpReg::RBP, -static_cast<std::int32_t>(lenOff));
 
@@ -1670,6 +1745,7 @@ private:
                 asm_.emitMovzxEaxAl();
                 asm_.emitMovMemFromEax32(GpReg::RBP, resultDisp);
                 return true;
+            case vir::TypeKind::Float32:
             case vir::TypeKind::Float64:
                 asm_.emitMovsdXmm0FromMem64(GpReg::RBP, inputDisp);
                 asm_.emitXorpdXmm1Xmm1();
@@ -1747,7 +1823,7 @@ private:
                     const std::int32_t disp = -static_cast<std::int32_t>(value->second.offset);
                     if (term.valueType.kind == vir::TypeKind::String) {
                         asm_.emitMovRaxFromMem64(GpReg::RBP, disp);
-                    } else if (term.valueType.kind == vir::TypeKind::Float64) {
+                    } else if (term.valueType.kind == vir::TypeKind::Float32 || term.valueType.kind == vir::TypeKind::Float64) {
                         asm_.emitMovsdXmm0FromMem64(GpReg::RBP, disp);
                     } else {
                         asm_.emitMovEaxFromMem32(GpReg::RBP, disp);

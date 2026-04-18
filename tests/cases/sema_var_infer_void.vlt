@@ -1,0 +1,5 @@
+public fn main() -> int32 {
+    var value = print("hello");
+    print(value);
+    return 0;
+}

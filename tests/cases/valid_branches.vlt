@@ -1,0 +1,14 @@
+public fn classify(int32 value) -> string {
+    if (value > 10) {
+        return "high";
+    } else {
+        return "low";
+    }
+}
+
+public fn main() -> int32 {
+    int32 input = 8;
+    string label = classify(input);
+    print(label);
+    return 0;
+}
