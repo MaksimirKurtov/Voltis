@@ -3,19 +3,22 @@ public fn add(int32 a, int32 b) -> int32 {
 }
 
 public fn main() -> int32 {
-    int32 speed = 10;
-    float64 precise = 12.75;
-    string text = speed.ToString();
-    print("speed as text: " + text);
+    print("=== Voltis native demo ===");
+    int32 speed = 15;
+    float64 precise = 12.755;
+    print("speed: " + speed.ToString());
+    print("precise: " + precise.Round().ToInt32().ToString());
 
     int32 total = add(speed, 5);
-    print(total);
+    print("total: " + total.ToString());
 
-    if ((total > 10) and true) {
-        print(precise.Round().ToInt32());
+    if (total > 10) {
+        print("status: fast");
     } else {
-        print("small");
+        print("status: small");
     }
+
+    print("done");
 
     return 0;
 }

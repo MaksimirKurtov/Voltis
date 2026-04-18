@@ -296,6 +296,7 @@ public:
     void emitPushRbp() { emitBytes({0x55}); }
     void emitMovRbpRsp() { emitBytes({0x48, 0x89, 0xE5}); }
     void emitSubRsp(std::uint32_t amount) { emitBytes({0x48, 0x81, 0xEC}); emitU32(amount); }
+    void emitAddRsp(std::uint32_t amount) { emitBytes({0x48, 0x81, 0xC4}); emitU32(amount); }
     void emitLeave() { emitBytes({0xC9}); }
     void emitRet() { emitBytes({0xC3}); }
 
@@ -391,8 +392,9 @@ public:
 
     void emitLeaRegRip(GpReg reg, const std::string& label) {
         const std::size_t offset = text_.size();
+        const std::uint8_t regBits = static_cast<std::uint8_t>(reg) & 7;
         emitRex(true, reg, std::nullopt);
-        emitBytes({0x8D, 0x05});
+        emitBytes({0x8D, static_cast<std::uint8_t>(0x05 | (regBits << 3))});
         emitU32(0);
         fixups_.push_back(Fixup{SectionId::Text, offset + 3, label, 7, FixupKind::RipDisp32});
     }
@@ -408,6 +410,7 @@ public:
     void emitTestRaxRax() { emitBytes({0x48, 0x85, 0xC0}); }
     void emitTestRcxRcx() { emitBytes({0x48, 0x85, 0xC9}); }
     void emitTestRdxRdx() { emitBytes({0x48, 0x85, 0xD2}); }
+    void emitAddRaxRcx() { emitBytes({0x48, 0x01, 0xC8}); }
     void emitAddEaxEcx() { emitBytes({0x01, 0xC8}); }
     void emitSubEaxEcx() { emitBytes({0x29, 0xC8}); }
     void emitImulEaxEcx() { emitBytes({0x0F, 0xAF, 0xC1}); }
@@ -443,16 +446,20 @@ public:
     void emitMovzxEaxAl() { emitBytes({0x0F, 0xB6, 0xC0}); }
 
     void emitCallRel32(const std::string& label) {
+        emitSubRsp(32);
         const std::size_t offset = text_.size();
         emitByte(0xE8);
         emitU32(0);
         fixups_.push_back(Fixup{SectionId::Text, offset + 1, label, 5, FixupKind::Rel32});
+        emitAddRsp(32);
     }
     void emitCallIat(const std::string& label) {
+        emitSubRsp(32);
         const std::size_t offset = text_.size();
         emitBytes({0xFF, 0x15});
         emitU32(0);
         fixups_.push_back(Fixup{SectionId::Text, offset + 2, label, 6, FixupKind::RipDisp32});
+        emitAddRsp(32);
     }
     void emitJmpRel32(const std::string& label) {
         const std::size_t offset = text_.size();
@@ -554,7 +561,7 @@ public:
         }
     }
 
-    std::string writeBinary(std::uint32_t entryRva) {
+    std::string writeBinary(std::uint32_t entryOffset) {
         finalizeImports();
 
         const std::size_t fileAlignment = 0x200;
@@ -603,7 +610,7 @@ public:
         appendU32(header, 0);
         appendU32(header, 0);
         appendU32(header, 0);
-        appendU32(header, entryRva);
+        appendU32(header, textRva + entryOffset);
         appendU32(header, textRva);
         appendU64(header, 0x0000000140000000ULL);
         appendU32(header, 0x1000);
@@ -684,7 +691,7 @@ private:
                                             static_cast<std::uint32_t>(sym.offset);
             const std::uint32_t sectionRva = (fixup.section == SectionId::Text ? textRva : fixup.section == SectionId::Rdata ? rdataRva : idataRva);
             const std::uint32_t siteRva = sectionRva + static_cast<std::uint32_t>(fixup.offset);
-            const std::uint32_t nextRva = siteRva + static_cast<std::uint32_t>(fixup.instructionSize);
+            const std::uint32_t nextRva = siteRva + 4;
             const std::uint32_t disp = static_cast<std::uint32_t>(static_cast<std::int64_t>(targetRva) - static_cast<std::int64_t>(nextRva));
             if (fixup.section == SectionId::Text) {
                 patchU32(text_.bytes(), fixup.offset, disp);
@@ -727,7 +734,9 @@ public:
         if (!emitModule(module, result.diagnostics)) {
             return result;
         }
-        const std::string payload = image_.writeBinary(0x1000);
+        const std::string entryLabel = "__voltis_entry";
+        const std::uint32_t entryOffset = static_cast<std::uint32_t>(image_.symbol(entryLabel).offset);
+        const std::string payload = image_.writeBinary(entryOffset);
         result.artifacts.push_back(BackendArtifact{
             BackendOutputKind::Executable,
             options_.moduleName + ".exe",
@@ -782,7 +791,6 @@ private:
             }
         }
 
-        entryRva_ = 0;
         return true;
     }
 
@@ -795,7 +803,7 @@ private:
 
         asm_.emitPushRbp();
         asm_.emitMovRbpRsp();
-        asm_.emitSubRsp(alignTo(32 + 96, 16));
+        asm_.emitSubRsp(static_cast<std::uint32_t>(alignTo(32 + 96, 16)));
         asm_.emitCallRel32(functionLabel(mainFn.name));
         if (mainFn.returnType.kind == vir::TypeKind::Int32 || mainFn.returnType.kind == vir::TypeKind::Bool) {
             asm_.emitBytes({0x89, 0xC1});
@@ -847,9 +855,9 @@ private:
         storeParameters(function, layout);
 
         for (const auto& block : function.blocks) {
-            const std::string blockLabel = blockLabel(function.name, block.id.index);
-            image_.defineSymbol(blockLabel, SectionId::Text, asm_.currentOffset());
-            asm_.markLabel(blockLabel, symbols_);
+            const std::string blkLabel = blockLabel(function.name, block.id.index);
+            image_.defineSymbol(blkLabel, SectionId::Text, asm_.currentOffset());
+            asm_.markLabel(blkLabel, symbols_);
             for (const auto& instruction : block.instructions) {
                 if (!emitInstruction(instruction, layout, diagnostics)) {
                     return false;
@@ -1498,59 +1506,61 @@ private:
         resetTemps();
         const std::string lhsOkLabel = tempLabel("concat_lhs_ok");
         const std::string rhsOkLabel = tempLabel("concat_rhs_ok");
-        const std::size_t lhsLenOff = layoutScratch(0);
-        const std::size_t rhsLenOff = layoutScratch(8);
-        const std::size_t destOff = layoutScratch(16);
-        const std::size_t bufferOff = layoutScratch(24);
+        const std::size_t lhsPtrOff = layoutScratch(0);
+        const std::size_t rhsPtrOff = layoutScratch(8);
+        const std::size_t lhsLenOff = layoutScratch(16);
+        const std::size_t rhsLenOff = layoutScratch(24);
+        const std::size_t destOff = layoutScratch(32);
 
         asm_.emitMovRaxFromMem64(GpReg::RBP, leftDisp);
         asm_.emitTestRaxRax();
         asm_.emitJccRel32(CondCode::NE, lhsOkLabel);
         asm_.emitLeaRegRip(GpReg::RAX, ensureLiteral(""));
         markTemp(lhsOkLabel);
-        asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
+        asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(lhsPtrOff));
 
         asm_.emitMovRaxFromMem64(GpReg::RBP, rightDisp);
         asm_.emitTestRaxRax();
         asm_.emitJccRel32(CondCode::NE, rhsOkLabel);
         asm_.emitLeaRegRip(GpReg::RAX, ensureLiteral(""));
         markTemp(rhsOkLabel);
-        asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
+        asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(rhsPtrOff));
 
-        asm_.emitMovRcxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
+        asm_.emitMovRcxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsPtrOff));
         asm_.emitCallIat(importLabel("msvcrt.dll", "strlen"));
         asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
 
-        asm_.emitMovRcxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
+        asm_.emitMovRcxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsPtrOff));
         asm_.emitCallIat(importLabel("msvcrt.dll", "strlen"));
         asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
 
         asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
         asm_.emitMovRcxFromRax64();
         asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
-        asm_.emitAddEaxEcx();
+        asm_.emitAddRaxRcx();
         asm_.emitBytes({0x48, 0x83, 0xC0, 0x01});
         asm_.emitMovRcxFromRax64();
         asm_.emitCallIat(importLabel("msvcrt.dll", "malloc"));
         asm_.emitMovMemFromRax64(GpReg::RBP, -static_cast<std::int32_t>(destOff));
 
         asm_.emitMovRcxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(destOff));
-        asm_.emitMovRdxFromMem64(GpReg::RBP, leftDisp);
+        asm_.emitMovRdxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsPtrOff));
         asm_.emitMovR8FromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
         asm_.emitCallIat(importLabel("msvcrt.dll", "memcpy"));
 
         asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(destOff));
         asm_.emitMovRcxFromRax64();
         asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(lhsLenOff));
-        asm_.emitAddEaxEcx();
+        asm_.emitAddRaxRcx();
         asm_.emitMovRcxFromRax64();
-        asm_.emitMovRdxFromMem64(GpReg::RBP, rightDisp);
-        asm_.emitMovR8FromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
+        asm_.emitMovRdxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsPtrOff));
+        asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(rhsLenOff));
+        asm_.emitBytes({0x48, 0x83, 0xC0, 0x01});
+        asm_.emitMovR8FromRax();
         asm_.emitCallIat(importLabel("msvcrt.dll", "memcpy"));
 
         asm_.emitMovRaxFromMem64(GpReg::RBP, -static_cast<std::int32_t>(destOff));
         asm_.emitMovMemFromRax64(GpReg::RBP, resultDisp);
-        (void)bufferOff;
         return true;
     }
 
@@ -1865,7 +1875,6 @@ private:
     std::unordered_map<std::string, std::string> scratch_;
     std::unordered_map<std::string, std::string> tempLabels_;
     std::size_t tempCounter_ = 0;
-    std::uint32_t entryRva_ = 0;
 };
 
 } // namespace
