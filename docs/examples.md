@@ -4,6 +4,15 @@ Navigation: [README](../README.md) · [Whitepaper](whitepaper.md) · [Syntax spe
 
 This page is a practical quick reference for the **currently implemented subset**. It is not a replacement for the spec.
 
+## Downloadable example files
+
+| File | Description |
+|---|---|
+| [hello.vlt](../examples/hello.vlt?raw=1) | Minimal hello-world program with `main` and `print`. |
+| [control_flow.vlt](../examples/control_flow.vlt?raw=1) | Demonstrates `if/else`, `while`, `break`, `continue`, and helper functions. |
+| [conversions.vlt](../examples/conversions.vlt?raw=1) | Demonstrates `ToInt32`, `ToFloat32`, `ToFloat64`, `ToBool`, `Round`, `Floor`, and `Ceil`. |
+| [advanced_control_flow.vlt](../examples/advanced_control_flow.vlt?raw=1) | Larger control-flow sample with loop accumulation and function calls. |
+
 ## Variables
 
 ```voltis
@@ -73,9 +82,4 @@ print(true);
 
 `print(expr)` takes exactly one argument and rejects `void` expressions.
 
-## Related examples in repository
-
-- [examples/hello.vlt](../examples/hello.vlt)
-- [examples/control_flow.vlt](../examples/control_flow.vlt)
-- [examples/conversions.vlt](../examples/conversions.vlt)
-- [examples/advanced_control_flow.vlt](../examples/advanced_control_flow.vlt)
+Need the full reference docs? See [docs/spec/README.md](spec/README.md).

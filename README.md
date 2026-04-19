@@ -10,46 +10,59 @@
 
 📓 [Whitepaper](docs/whitepaper.md) · 💬 [Discussions](https://github.com/MaksimirKurtov/Voltis/discussions) · 📚 [Wiki](https://github.com/MaksimirKurtov/Voltis/wiki)
 
-**Voltis** is an early-stage, native compiled language project with a working compiler pipeline from `.vlt` source to Windows x64 PE executables.
+**Voltis** is an early-stage native compiled language with a real working pipeline:
 
-It is not an interpreter and not a transpiler-first project. The production path is source -> AST -> semantic analysis -> VIR -> backend -> native binary.
+`source -> lexer -> parser -> AST -> semantic analysis -> VIR -> backend -> Windows x64 .exe`
 
-⚙️ Native compiler path is active. 🧪 CMake/CTest coverage is included.
+It is not an interpreter and not a transpiler-first project.
 
 ## Contents
 
-- [Why Voltis](#why-voltis)
-- [Hello world](#hello-world)
-- [What works today](#what-works-today)
-- [What's missing](#whats-missing)
-- [Architecture overview](#architecture-overview)
 - [Quick start](#quick-start)
+- [Examples](#examples)
+- [What works today](#what-works-today)
+- [Current limits](#current-limits)
+- [Architecture overview](#architecture-overview)
 - [Compile commands](#compile-commands)
-- [Repository layout](#repository-layout)
-- [Documentation](#documentation)
-- [Governance and licensing](#governance-and-licensing)
+- [Project layout](#project-layout)
+- [Docs and governance](#docs-and-governance)
 
-## Why Voltis
+## Quick start
 
-Voltis aims to provide:
+### 1. Build
 
-- native compilation for Windows-first systems work
-- readable syntax with explicit typing
-- a custom intermediate representation (VIR)
-- a clear path toward broader language and backend maturity
+```bash
+# Windows (MinGW)
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build -j
 
-## Hello world
-
-```voltis
-public fn main() -> int32 {
-    print("Hello, Voltis!");
-    return 0;
-}
+# Linux/macOS or default generator
+cmake -S . -B build
+cmake --build build -j
 ```
+
+### 2. Run tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+### 3. Compile a sample
+
+```bash
+build/voltisc examples/hello.vlt -o hello.exe
+```
+
+## Examples
+
+Want runnable sample programs first? Start here:
+
+- **Examples index:** [docs/examples.md](docs/examples.md)
+- Includes a **downloadable file table** and quick usage notes.
 
 ## What works today
 
-| Area | Current state |
+| Area | Status |
 |---|---|
 | Frontend pipeline | Lexer, parser, AST, semantic checks for implemented subset |
 | IR | Typed VIR generation (`src/vir.*`, `src/lowering.*`) |
@@ -58,7 +71,7 @@ public fn main() -> int32 {
 | Diagnostics | Parser and semantic diagnostics for symbol/type/control-flow issues |
 | Tests | CMake/CTest suite with parser, sema, VIR, and native compile/runtime cases |
 
-## What's missing
+## Current limits
 
 | Category | Not yet implemented |
 |---|---|
@@ -82,28 +95,6 @@ public fn main() -> int32 {
 
 See [docs/architecture.md](docs/architecture.md) and [docs/spec/backend.md](docs/spec/backend.md).
 
-## Quick start
-
-### Build (Windows MinGW)
-
-```bash
-cmake -S . -B build -G "MinGW Makefiles"
-cmake --build build -j
-```
-
-### Build (Linux/macOS or default generator)
-
-```bash
-cmake -S . -B build
-cmake --build build -j
-```
-
-### Run tests
-
-```bash
-ctest --test-dir build --output-on-failure
-```
-
 ## Compile commands
 
 ```bash
@@ -120,7 +111,7 @@ build/voltisc examples/hello.vlt --emit-llvm -o hello.ll
 build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 ```
 
-## Repository layout
+## Project layout
 
 ```text
 .
@@ -137,23 +128,19 @@ build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 
 `src/` and `tests/` are the current compiler implementation roots used by the active CMake build.
 
-## Documentation
+## Docs and governance
 
 | Document | Purpose |
 |---|---|
 | [docs/whitepaper.md](docs/whitepaper.md) | Design rationale and direction |
+| [docs/examples.md](docs/examples.md) | Example file index + quick language reference |
 | [docs/spec/syntax.md](docs/spec/syntax.md) | Syntax specification (implemented subset + direction) |
 | [docs/spec/types.md](docs/spec/types.md) | Type system specification |
 | [docs/spec/conversions.md](docs/spec/conversions.md) | Conversion model and rules |
 | [docs/spec/control_flow.md](docs/spec/control_flow.md) | Control-flow semantics |
 | [docs/spec/backend.md](docs/spec/backend.md) | Compiler/backend architecture and outputs |
-| [docs/examples.md](docs/examples.md) | Quick reference for implemented language usage |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and review policy |
-
-## Governance and licensing
-
-- Compiler code: [LICENSE](LICENSE)
-- Language specification/docs: [SPEC_LICENSE.md](SPEC_LICENSE.md) (CC BY 4.0)
-- Project governance and language authority: [GOVERNANCE.md](GOVERNANCE.md)
-- Community standards: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Direction and milestones: [ROADMAP.md](ROADMAP.md)
+| [GOVERNANCE.md](GOVERNANCE.md) | Language authority and project governance |
+| [LICENSE](LICENSE) | Compiler code license |
+| [SPEC_LICENSE.md](SPEC_LICENSE.md) | Documentation/spec license (CC BY 4.0) |
+| [ROADMAP.md](ROADMAP.md) | Short/mid/long-term direction |
