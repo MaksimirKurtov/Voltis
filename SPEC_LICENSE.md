@@ -11,7 +11,7 @@ This includes, at minimum:
 
 - `docs/spec/*.md`
 - `docs/whitepaper.md`
-- `docs/examples.md` (reference guide content)
+- [Examples](docs/examples.md) (reference guide content)
 - `veps/*.md` (proposal documents)
 
 ## Attribution

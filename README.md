@@ -57,7 +57,7 @@ build/voltisc examples/hello.vlt -o hello.exe
 
 Want runnable sample programs first? Start here:
 
-- **Examples index:** [docs/examples.md](docs/examples.md)
+- **Examples index:** [Examples](docs/examples.md)
 - Includes a **downloadable file table** and quick usage notes.
 
 ## What works today
@@ -133,7 +133,7 @@ build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 | Document | Purpose |
 |---|---|
 | [docs/whitepaper.md](docs/whitepaper.md) | Design rationale and direction |
-| [docs/examples.md](docs/examples.md) | Example file index + quick language reference |
+| [Examples](docs/examples.md) | Example file index + quick language reference |
 | [docs/spec/syntax.md](docs/spec/syntax.md) | Syntax specification (implemented subset + direction) |
 | [docs/spec/types.md](docs/spec/types.md) | Type system specification |
 | [docs/spec/conversions.md](docs/spec/conversions.md) | Conversion model and rules |
