@@ -3,9 +3,8 @@
 [![License](https://img.shields.io/badge/license-VCL%20%2B%20CC--BY%204.0-blue)](LICENSE)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](compiler/README.md)
 [![Voltis](https://img.shields.io/badge/language-Voltis-6f42c1)](docs/spec/syntax.md)
-[![Build](https://img.shields.io/badge/build-cmake%20%2B%20ctest-blue)](README.md#quick-start)
 [![Stage](https://img.shields.io/badge/stage-early%20alpha-orange)](ROADMAP.md)
-[![Stars](https://img.shields.io/github/stars/MaksimirKurtov/Voltis?style=flat)](https://github.com/MaksimirKurtov/Voltis/stargazers)
+[![Stars](https://img.shields.io/github/stars/MaksimirKurtov/Voltis?style=flat)](https://github.com/MaksimirKurtov/Voltis)
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D6)](docs/spec/backend.md)
 
 📓 [Whitepaper](docs/whitepaper.md) · 💬 [Discussions](https://github.com/MaksimirKurtov/Voltis/discussions) · 📚 [Wiki](https://github.com/MaksimirKurtov/Voltis/wiki)
