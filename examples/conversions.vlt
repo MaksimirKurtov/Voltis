@@ -1,0 +1,20 @@
+public fn main() -> int32 {
+    float64 precise = 12.75;
+    int32 truncValue = precise.ToInt32();
+    int32 roundedValue = precise.Round().ToInt32();
+    int32 flooredValue = precise.Floor().ToInt32();
+    int32 ceiledValue = precise.Ceil().ToInt32();
+
+    float32 asF32 = truncValue.ToFloat32();
+    float64 asF64 = truncValue.ToFloat64();
+    bool enabled = "true".ToBool();
+
+    print("trunc: " + truncValue.ToString());
+    print("round: " + roundedValue.ToString());
+    print("floor: " + flooredValue.ToString());
+    print("ceil: " + ceiledValue.ToString());
+    print("f32: " + asF32.ToString());
+    print("f64: " + asF64.ToString());
+    print("enabled: " + enabled.ToString());
+    return 0;
+}

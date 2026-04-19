@@ -1,5 +1,7 @@
 # Voltis Architecture Status (code-truth, whitepaper-aligned)
 
+Navigation: [README](../README.md) · [Whitepaper](whitepaper.md) · [Backend spec](spec/backend.md) · [Examples guide](examples.md)
+
 ## 1) Current implemented architecture
 
 `voltisc` currently executes this flow:
@@ -36,6 +38,8 @@ Voltis source (.vlt)
 - assignment/return compatibility checks
 - expression typing for literals, unary/binary ops, calls
 - conversion-member validation (`ToString/ToInt32/ToFloat32/ToFloat64/ToBool/Round/Floor/Ceil`)
+- loop semantics for `while`, `break`, and `continue`
+- non-void return-path checks (diagnose missing returns on some paths)
 
 **Not implemented yet (whitepaper-scale semantics):**
 
@@ -70,8 +74,9 @@ Voltis source (.vlt)
   - LLVM IR text (`--emit-llvm`)
   - native executable (default mode)
 - direct Windows PE backend for self-contained native output
+- default native path no longer depends on a project runtime static library target
 
-Direct PE backend coverage currently includes `int32`, `bool`, `string`, and `float64` for the supported example paths.
+Direct PE backend coverage currently includes `int32`, `float32`, `float64`, `bool`, and `string` for the supported example and test paths.
 
 **Not implemented yet:**
 
@@ -107,6 +112,6 @@ The active parser subset in this repo is function-centric and semicolon-based:
 - braces for blocks
 - semicolons required for statements
 - primitives: `int32`, `float32`, `float64`, `string`, `bool`, `void`
-- `if/else`, `return`, local declarations/assignment, direct calls, conversion members
+- `if/else`, `while`, `break`, `continue`, `return`, local declarations/assignment, direct calls, conversion members
 
 This document intentionally avoids claiming support for classes, modules, extern interop syntax, or full backend maturity (DLL/import-lib, optimizer, custom COFF backend), even though native exe generation is now available.

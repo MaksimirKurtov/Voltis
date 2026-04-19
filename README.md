@@ -1,150 +1,153 @@
-# Voltis compiler prototype (`voltisc`)
+# Voltis
 
-This repository contains a **C++17 prototype compiler** for a **small, implemented Voltis subset**.
-It follows the whitepaper direction, but it is not the full language/toolchain yet.
+![Build](https://img.shields.io/badge/build-cmake%20%2B%20ctest-blue)
+![Project status](https://img.shields.io/badge/status-active%20development-orange)
+![Language stage](https://img.shields.io/badge/stage-early%20alpha-purple)
 
-## Implemented pipeline (today)
+**Voltis** is an early-stage, native compiled language project with a working compiler pipeline from `.vlt` source to Windows x64 PE executables.
 
-`voltisc` currently runs:
+It is not an interpreter and not a transpiler-first project. The production path is source -> AST -> semantic analysis -> VIR -> backend -> native binary.
 
-1. Lexer (`.vlt` -> tokens)
-2. Parser (tokens -> AST)
-3. Semantic analysis (subset checks)
-4. Typed lowering (AST -> VIR)
-5. Backend abstraction (`IBackend`)
-6. Direct Windows x64 PE backend (native executable output)
-7. LLVM IR text backend (`.ll`) for inspection/debugging
+⚙️ Native compiler path is active. 🧪 CMake/CTest coverage is included.
 
-There is also an explicit temporary path:
+## Contents
 
-- `--bootstrap-cpp`: AST -> generated C++17 -> host C++ compiler (optional)
+- [Why Voltis](#why-voltis)
+- [Hello world](#hello-world)
+- [What works today](#what-works-today)
+- [What's missing](#whats-missing)
+- [Architecture overview](#architecture-overview)
+- [Quick start](#quick-start)
+- [Compile commands](#compile-commands)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Governance and licensing](#governance-and-licensing)
 
-The direct native backend currently covers the subset exercised by the bundled examples: `int32`, `bool`, `string`, and `float64` with the supported conversions and comparisons.
+## Why Voltis
 
-## Implemented vs scaffolded status
+Voltis aims to provide:
 
-| Area | Status in code |
-|---|---|
-| Semantic analysis | **Implemented for subset**: function registration, scoped symbols, type checks for expressions/assignments/returns/calls, conversion-member validation |
-| VIR | **Implemented for subset**: typed VIR model (`src/vir.*`) and lowering from semantic output (`src/lowering.*`) |
-| Backend abstraction + LLVM | **Implemented boundary** (`src/backend.h`) + **implemented LLVM IR text backend** (`src/backend_llvm_ir.*`) |
-| Runtime library | **Implemented** (`src/voltis_runtime.cpp`) as `voltis_runtime` CMake target |
-| Native `.exe` generation from VIR backend flow | **Implemented**: direct Windows PE backend with default native executable output |
+- native compilation for Windows-first systems work
+- readable syntax with explicit typing
+- a custom intermediate representation (VIR)
+- a clear path toward broader language and backend maturity
 
-## Supported Voltis subset (actual parser/sema subset)
-
-Syntax in this repo requires braces and semicolons:
+## Hello world
 
 ```voltis
-public fn add(int32 a, int32 b) -> int32 {
-    return a + b;
-}
-
 public fn main() -> int32 {
-    int32 speed = 10;
-    float64 precise = 12.75;
-    string text = speed.ToString();
-    print("speed as text: " + text);
-
-    int32 total = add(speed, 5);
-    print(total);
-
-    if ((total > 10) and true) {
-        print(precise.Round().ToInt32());
-    } else {
-        print("small");
-    }
-
+    print("Hello, Voltis!");
     return 0;
 }
 ```
 
-Implemented language pieces:
+## What works today
 
-- top-level `fn name(...) -> type { ... }`
-- modifiers are lexed/parsed and currently ignored (`public/private/protected/internal/static/readonly/const/volatile/unsafe`)
-- types: `int32`, `float32`, `float64`, `string`, `bool`, `void`
-- statements: local declarations, `var` inference, assignment, expression statements, `if/else`, `return`
-- expressions: arithmetic, comparisons, logical `and/or/not` (and `!`), direct function calls, conversion member calls
-- built-in function: `print(expr)`
-- conversion members:
-  - `.ToString()`
-  - `.ToInt32()` (float -> int truncates toward zero)
-  - `.ToFloat32()`
-  - `.ToFloat64()`
-  - `.ToBool()`
-  - `.Round()`
-  - `.Floor()`
-  - `.Ceil()`
+| Area | Current state |
+|---|---|
+| Frontend pipeline | Lexer, parser, AST, semantic checks for implemented subset |
+| IR | Typed VIR generation (`src/vir.*`, `src/lowering.*`) |
+| Native backend | Windows x64 PE executable emission (default mode) |
+| LLVM path | LLVM IR text emission with `--emit-llvm` |
+| Diagnostics | Parser and semantic diagnostics for symbol/type/control-flow issues |
+| Tests | CMake/CTest suite with parser, sema, VIR, and native compile/runtime cases |
 
-Semantic diagnostics currently include:
+## What's missing
 
-- unknown/duplicate symbols
-- unknown types
-- function argument count/type mismatch
-- return type mismatch
-- assignment compatibility errors
-- invalid conversion member usage/receiver type
+| Category | Not yet implemented |
+|---|---|
+| Language surface | Modules, user-defined types, generics, full interop model |
+| Backend maturity | Full DLL workflow, broader ABI coverage, optimization pipeline |
+| Tooling | Formatter, language server, package manager, debugger integration |
 
-## Building the compiler
+## Architecture overview
 
-### Linux / macOS
-```bash
-cmake -S . -B build
-cmake --build build -j
+```text
+.vlt source
+  -> lexer
+  -> parser
+  -> AST
+  -> semantic analysis
+  -> VIR lowering
+  -> backend abstraction
+     -> PE x64 backend (default, native .exe)
+     -> LLVM IR text backend (--emit-llvm)
 ```
 
-### Windows (MSYS2 / MinGW)
+See [docs/architecture.md](docs/architecture.md) and [docs/spec/backend.md](docs/spec/backend.md).
+
+## Quick start
+
+### Build (Windows MinGW)
+
 ```bash
 cmake -S . -B build -G "MinGW Makefiles"
 cmake --build build -j
 ```
 
-### Windows (Visual Studio)
-```powershell
+### Build (Linux/macOS or default generator)
+
+```bash
 cmake -S . -B build
-cmake --build build --config Release
+cmake --build build -j
 ```
 
-## Running automated tests
+### Run tests
 
-```powershell
-cmake -S . -B build
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
-```
-
-## Using the compiler
-
-### Production-directed default (build native executable)
 ```bash
-voltisc examples/hello.vlt
+ctest --test-dir build --output-on-failure
 ```
 
-### Emit VIR text
+## Compile commands
+
 ```bash
-voltisc examples/hello.vlt --emit-vir
+# Native executable (default path)
+build/voltisc examples/hello.vlt -o hello.exe
+
+# Emit VIR text
+build/voltisc examples/hello.vlt --emit-vir -o hello.vir
+
+# Emit LLVM IR text
+build/voltisc examples/hello.vlt --emit-llvm -o hello.ll
+
+# Optional bootstrap C++ path (temporary)
+build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 ```
 
-### Emit LLVM IR text to custom path
-```bash
-voltisc examples/hello.vlt --emit-llvm -o hello.ll
+## Repository layout
+
+```text
+.
+├── compiler/
+├── docs/
+│   ├── whitepaper.md
+│   ├── examples.md
+│   └── spec/
+├── examples/
+├── veps/
+├── src/
+└── tests/
 ```
 
-### Temporary bootstrap C++ path (scaffolding only)
-```bash
-voltisc examples/hello.vlt --bootstrap-cpp --no-link
-voltisc examples/hello.vlt --bootstrap-cpp -o hello.exe
-```
+`src/` and `tests/` are the current compiler implementation roots used by the active CMake build.
 
-If needed, pick host C++ compiler explicitly:
+## Documentation
 
-```powershell
-$env:VOLTIS_CXX = "clang++"
-# or
-$env:VOLTIS_CXX = "g++"
-```
+| Document | Purpose |
+|---|---|
+| [docs/whitepaper.md](docs/whitepaper.md) | Design rationale and direction |
+| [docs/spec/syntax.md](docs/spec/syntax.md) | Syntax specification (implemented subset + direction) |
+| [docs/spec/types.md](docs/spec/types.md) | Type system specification |
+| [docs/spec/conversions.md](docs/spec/conversions.md) | Conversion model and rules |
+| [docs/spec/control_flow.md](docs/spec/control_flow.md) | Control-flow semantics |
+| [docs/spec/backend.md](docs/spec/backend.md) | Compiler/backend architecture and outputs |
+| [docs/examples.md](docs/examples.md) | Quick reference for implemented language usage |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and review policy |
 
-## Native toolchain requirements
+## Governance and licensing
 
-The default production path now emits a Windows PE executable directly. No external clang/LLVM toolchain is required for normal compilation. Use `--emit-llvm` or `--emit-vir` when you want text artifacts for debugging.
+- Compiler code: [LICENSE](LICENSE)
+- Language specification/docs: [SPEC_LICENSE.md](SPEC_LICENSE.md) (CC BY 4.0)
+- Project governance and language authority: [GOVERNANCE.md](GOVERNANCE.md)
+- Community standards: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Direction and milestones: [ROADMAP.md](ROADMAP.md)

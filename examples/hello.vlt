@@ -1,24 +1,4 @@
-public fn add(int32 a, int32 b) -> int32 {
-    return a + b;
-}
-
 public fn main() -> int32 {
-    print("=== Voltis native demo ===");
-    int32 speed = 15;
-    float64 precise = 12.755;
-    print("speed: " + speed.ToString());
-    print("precise: " + precise.ToString());
-    float64 total = precise + speed.ToFloat64();
-  
-    print("total: " + total.ToString());
-
-    if (total > 10) {
-        print("status: fast");
-    } else {
-        print("status: small");
-    }
-
-    print("done");
-
+    print("Hello, Voltis!");
     return 0;
 }
