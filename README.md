@@ -14,7 +14,7 @@
 Voltis is an early-stage but real language toolchain.  
 Current default path:
 
-`source -> lexer -> parser -> AST -> semantic analysis -> VIR -> backend -> Windows x64 PE .exe`
+`source -> lexer -> parser -> AST -> semantic analysis -> VIR -> VIR optimize/verify -> backend -> Windows x64 PE .exe`
 
 Voltis is **not** an interpreter and is **not** a transpile-first architecture.
 
@@ -47,7 +47,7 @@ public fn main() -> int32 {
 | Control flow | `if/else`, `while`, `break`, `continue`, `return`/`return;` |
 | Conversions | `ToString`, `ToInt32`, `ToFloat32`, `ToFloat64`, `ToBool`, `Round`, `Floor`, `Ceil` |
 | Interop | `import` + `extern fn ... from ...;` declarations with PE IAT-backed DLL calls |
-| IR | Typed VIR model and lowering (`src/vir.*`, `src/lowering.*`) |
+| IR | Typed VIR model/lowering plus optimization + structural verification passes (`src/vir.*`, `src/lowering.*`, `src/vir_passes.*`) |
 | Backends | Native PE x64 executable output (default) + LLVM IR text (`--emit-llvm`) |
 | Validation | CMake/CTest suite with parser, sema, VIR, and runtime-oriented cases |
 
@@ -69,6 +69,7 @@ public fn main() -> int32 {
   -> AST
   -> semantic analysis
   -> VIR lowering
+  -> VIR optimization + verification
   -> backend abstraction
        -> PE x64 backend (default native executable)
        -> LLVM IR text backend (--emit-llvm)

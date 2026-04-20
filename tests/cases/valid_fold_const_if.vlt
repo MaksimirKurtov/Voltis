@@ -1,0 +1,8 @@
+public fn main() -> int32 {
+    if (true) {
+        print("hot");
+    } else {
+        print("cold");
+    }
+    return 0;
+}

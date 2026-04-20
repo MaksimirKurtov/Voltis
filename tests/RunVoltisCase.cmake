@@ -19,6 +19,14 @@ function(assert_contains haystack needle context)
     endif()
 endfunction()
 
+function(assert_not_contains haystack needle context)
+    string(FIND "${haystack}" "${needle}" match_pos)
+    if(NOT match_pos EQUAL -1)
+        message(FATAL_ERROR
+            "${context} unexpectedly contained text:\n${needle}\n---- actual output ----\n${haystack}\n---- end output ----")
+    endif()
+endfunction()
+
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 set(source_file "")
@@ -28,6 +36,7 @@ set(expected_stdout)
 set(expected_stderr)
 set(expected_file "")
 set(expected_file_contains)
+set(expected_file_not_contains)
 set(run_emitted FALSE)
 set(expected_run_stdout)
 
@@ -151,6 +160,26 @@ elseif(CASE STREQUAL "valid-emit-vir-import-angle")
         "imports:"
         "extern fn GetCurrentProcessId() -> int32 from \"kernel32.dll\""
         "call GetCurrentProcessId [extern from \"kernel32.dll\"]")
+elseif(CASE STREQUAL "valid-emit-vir-fold-const-if")
+    set(source_file "${CASE_DIR}/valid_fold_const_if.vlt")
+    set(expected_file "${OUT_DIR}/valid_fold_const_if.vir")
+    set(args --emit-vir -o "${expected_file}")
+    set(expected_stdout "Emitted VIR:")
+    set(expected_file_contains
+        "module {"
+        "\"hot\"")
+    set(expected_file_not_contains
+        "\"cold\"")
+elseif(CASE STREQUAL "valid-emit-vir-fold-const-while")
+    set(source_file "${CASE_DIR}/valid_fold_const_while.vlt")
+    set(expected_file "${OUT_DIR}/valid_fold_const_while.vir")
+    set(args --emit-vir -o "${expected_file}")
+    set(expected_stdout "Emitted VIR:")
+    set(expected_file_contains
+        "module {"
+        "ret")
+    set(expected_file_not_contains
+        "\"never\"")
 elseif(CASE STREQUAL "parser-missing-semicolon")
     set(source_file "${CASE_DIR}/parser_missing_semicolon.vlt")
     set(expected_exit 1)
@@ -274,6 +303,9 @@ if(NOT "${expected_file}" STREQUAL "")
     string(REPLACE "\r\n" "\n" emitted_file_content "${emitted_file_content}")
     foreach(expected IN LISTS expected_file_contains)
         assert_contains("${emitted_file_content}" "${expected}" "CASE ${CASE} emitted file")
+    endforeach()
+    foreach(expected IN LISTS expected_file_not_contains)
+        assert_not_contains("${emitted_file_content}" "${expected}" "CASE ${CASE} emitted file")
     endforeach()
 
     if(run_emitted)

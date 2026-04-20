@@ -6,6 +6,7 @@
 #include "parser.h"
 #include "sema.h"
 #include "vir.h"
+#include "vir_passes.h"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -62,11 +63,6 @@ struct CliOptions {
     bool bootstrapCpp = false;
 };
 
-struct NativeToolchain {
-    std::string clangExecutable = "clang";
-    std::optional<fs::path> runtimeLibraryPath;
-};
-
 static fs::path defaultArtifactPath(const fs::path& inputPath, const std::string& extension) {
     return inputPath.parent_path() / (inputPath.stem().string() + extension);
 }
@@ -79,86 +75,12 @@ static fs::path defaultExecutablePath(const fs::path& inputPath) {
 #endif
 }
 
-static std::string objectExtension() {
-#ifdef _WIN32
-    return ".obj";
-#else
-    return ".o";
-#endif
-}
-
-static bool runProbeCommand(const std::string& command) {
-    return std::system(command.c_str()) == 0;
-}
-
-static bool commandAvailable(const std::string& executable) {
-#ifdef _WIN32
-    const std::string command = shellQuote(executable) + " --version >nul 2>&1";
-#else
-    const std::string command = shellQuote(executable) + " --version >/dev/null 2>&1";
-#endif
-    return runProbeCommand(command);
-}
-
 static void runCommandOrThrow(const std::string& command, const std::string& failureMessage) {
     std::cout << "Invoking: " << command << "\n";
     int code = std::system(command.c_str());
     if (code != 0) {
         throw std::runtime_error(failureMessage + " (exit code " + std::to_string(code) + ")");
     }
-}
-
-static std::optional<fs::path> resolveRuntimeLibrary(const fs::path& executablePath) {
-    if (const char* envRuntime = std::getenv("VOLTIS_RUNTIME_LIB")) {
-        fs::path candidate(envRuntime);
-        if (fs::exists(candidate)) {
-            return candidate;
-        }
-    }
-
-    const fs::path exeDir = fs::absolute(executablePath).parent_path();
-    const std::vector<fs::path> candidates = {
-        exeDir / "voltis_runtime.lib",
-        exeDir / "libvoltis_runtime.a",
-        exeDir / "voltis_runtime.a",
-        exeDir.parent_path() / "voltis_runtime.lib",
-        exeDir.parent_path() / "libvoltis_runtime.a",
-        exeDir.parent_path() / "voltis_runtime.a"
-    };
-
-    for (const auto& candidate : candidates) {
-        if (fs::exists(candidate)) {
-            return candidate;
-        }
-    }
-
-    return std::nullopt;
-}
-
-static NativeToolchain resolveNativeToolchain(const fs::path& executablePath, bool requireRuntimeLibrary) {
-    NativeToolchain toolchain;
-    if (const char* envClang = std::getenv("VOLTIS_CLANG")) {
-        if (*envClang) {
-            toolchain.clangExecutable = envClang;
-        }
-    }
-
-    if (!commandAvailable(toolchain.clangExecutable)) {
-        throw std::runtime_error(
-            "Native toolchain unavailable: clang was not found. Install clang/LLVM (or set VOLTIS_CLANG), "
-            "or use --emit-llvm/--emit-vir.");
-    }
-
-    if (requireRuntimeLibrary) {
-        const auto runtimeLibrary = resolveRuntimeLibrary(executablePath);
-        if (!runtimeLibrary.has_value()) {
-            throw std::runtime_error(
-                "Native link stage unavailable: voltis_runtime library not found next to voltisc. "
-                "Build the voltis_runtime CMake target or set VOLTIS_RUNTIME_LIB.");
-        }
-        toolchain.runtimeLibraryPath = *runtimeLibrary;
-    }
-    return toolchain;
 }
 
 static void printUsage() {
@@ -266,6 +188,20 @@ int main(int argc, char** argv) {
         LoweringResult lowered = lowerer.lower(program, sema);
         if (!lowered.ok()) {
             lowered.diagnostics.print(std::cerr);
+            return 1;
+        }
+
+        DiagnosticBag preOptimizationVerify = vir::verifyModule(lowered.module);
+        if (preOptimizationVerify.hasErrors()) {
+            preOptimizationVerify.print(std::cerr);
+            return 1;
+        }
+
+        vir::optimizeModule(lowered.module);
+
+        DiagnosticBag postOptimizationVerify = vir::verifyModule(lowered.module);
+        if (postOptimizationVerify.hasErrors()) {
+            postOptimizationVerify.print(std::cerr);
             return 1;
         }
 
