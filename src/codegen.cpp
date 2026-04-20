@@ -96,7 +96,11 @@ std::string CodeGenerator::genStmt(const Stmt* stmt, int level) {
         return out.str();
     }
     if (auto ret = dynamic_cast<const ReturnStmt*>(stmt)) {
-        out << indent(level) << "return " << genExpr(ret->expr.get()) << ";\n";
+        if (ret->expr) {
+            out << indent(level) << "return " << genExpr(ret->expr.get()) << ";\n";
+        } else {
+            out << indent(level) << "return;\n";
+        }
         return out.str();
     }
     if (auto decl = dynamic_cast<const VarDeclStmt*>(stmt)) {
@@ -122,6 +126,19 @@ std::string CodeGenerator::genStmt(const Stmt* stmt, int level) {
             out << indent(level) << "else ";
             out << genStmt(ifStmt->elseBlock.get(), level);
         }
+        return out.str();
+    }
+    if (auto whileStmt = dynamic_cast<const WhileStmt*>(stmt)) {
+        out << indent(level) << "while (" << genExpr(whileStmt->condition.get()) << ") ";
+        out << genStmt(whileStmt->body.get(), level);
+        return out.str();
+    }
+    if (dynamic_cast<const BreakStmt*>(stmt)) {
+        out << indent(level) << "break;\n";
+        return out.str();
+    }
+    if (dynamic_cast<const ContinueStmt*>(stmt)) {
+        out << indent(level) << "continue;\n";
         return out.str();
     }
     throw std::runtime_error("Unsupported statement node");
@@ -175,6 +192,28 @@ std::string CodeGenerator::generate(const Program& program) {
     out << "    inline float Floor(float value) { return std::floor(value); }\n";
     out << "    inline float Ceil(float value) { return std::ceil(value); }\n";
     out << "}\n\n";
+
+    for (const auto& externFn : program.externFunctions) {
+        out << "#ifdef _WIN32\n";
+        out << "extern \"C\" __declspec(dllimport) ";
+        out << mapType(externFn.returnType) << " " << externFn.name << "(";
+        for (std::size_t i = 0; i < externFn.params.size(); ++i) {
+            if (i > 0) out << ", ";
+            out << mapType(externFn.params[i].type) << " " << externFn.params[i].name;
+        }
+        out << ");\n";
+        out << "#else\n";
+        out << "extern \"C\" " << mapType(externFn.returnType) << " " << externFn.name << "(";
+        for (std::size_t i = 0; i < externFn.params.size(); ++i) {
+            if (i > 0) out << ", ";
+            out << mapType(externFn.params[i].type) << " " << externFn.params[i].name;
+        }
+        out << ");\n";
+        out << "#endif\n";
+    }
+    if (!program.externFunctions.empty()) {
+        out << "\n";
+    }
 
     for (const auto& fn : program.functions) {
         out << mapType(fn.returnType) << " " << fn.name << "(";

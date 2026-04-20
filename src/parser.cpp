@@ -64,15 +64,54 @@ std::string Parser::parseType() {
 Program Parser::parseProgram() {
     Program program;
     while (!isAtEnd()) {
-        skipModifiers();
-        if (match(TokenType::KeywordFn)) {
-            --current_;
-            program.functions.push_back(parseFunction());
-        } else {
-            throw std::runtime_error("Expected function declaration at line " + std::to_string(peek().line));
+        if (check(TokenType::KeywordImport)) {
+            program.imports.push_back(parseImportDecl());
+            continue;
         }
+
+        const std::size_t declarationStart = current_;
+        skipModifiers();
+        if (check(TokenType::KeywordExtern)) {
+            current_ = declarationStart;
+            program.externFunctions.push_back(parseExternFunction());
+            continue;
+        }
+        if (check(TokenType::KeywordFn)) {
+            current_ = declarationStart;
+            program.functions.push_back(parseFunction());
+            continue;
+        }
+
+        throw std::runtime_error("Expected top-level declaration at line " + std::to_string(peek().line));
     }
     return program;
+}
+
+std::string Parser::parseImportPath() {
+    if (match(TokenType::String)) {
+        return previous().lexeme;
+    }
+
+    if (match(TokenType::Less)) {
+        std::string path;
+        while (!check(TokenType::Greater) && !isAtEnd()) {
+            path += advance().lexeme;
+        }
+        consume(TokenType::Greater, "Expected '>' to end import path");
+        if (path.empty()) {
+            throw std::runtime_error("Import path cannot be empty at line " + std::to_string(previous().line));
+        }
+        return path;
+    }
+
+    throw std::runtime_error("Expected import path (string literal or <path>) at line " + std::to_string(peek().line));
+}
+
+ImportDecl Parser::parseImportDecl() {
+    const Token& importToken = consume(TokenType::KeywordImport, "Expected 'import'");
+    const std::string path = parseImportPath();
+    consume(TokenType::Semicolon, "Expected ';' after import declaration");
+    return ImportDecl{path, SourceLocation{importToken.line, importToken.column}};
 }
 
 FunctionDecl Parser::parseFunction() {
@@ -96,6 +135,37 @@ FunctionDecl Parser::parseFunction() {
     return FunctionDecl{nameToken.lexeme, std::move(params), returnType, std::move(body), SourceLocation{nameToken.line, nameToken.column}};
 }
 
+ExternFunctionDecl Parser::parseExternFunction() {
+    skipModifiers();
+    consume(TokenType::KeywordExtern, "Expected 'extern'");
+    consume(TokenType::KeywordFn, "Expected 'fn' after 'extern'");
+    const Token& nameToken = consume(TokenType::Identifier, "Expected function name");
+    consume(TokenType::LParen, "Expected '('");
+
+    std::vector<Param> params;
+    if (!check(TokenType::RParen)) {
+        do {
+            std::string type = parseType();
+            const Token& paramNameToken = consume(TokenType::Identifier, "Expected parameter name");
+            params.push_back({type, paramNameToken.lexeme, SourceLocation{paramNameToken.line, paramNameToken.column}});
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::RParen, "Expected ')'");
+    consume(TokenType::Arrow, "Expected '->'");
+    const std::string returnType = parseType();
+    consume(TokenType::KeywordFrom, "Expected 'from' in extern declaration");
+    const std::string importPath = parseImportPath();
+    consume(TokenType::Semicolon, "Expected ';' after extern declaration");
+
+    return ExternFunctionDecl{
+        nameToken.lexeme,
+        std::move(params),
+        returnType,
+        importPath,
+        SourceLocation{nameToken.line, nameToken.column},
+    };
+}
+
 std::unique_ptr<BlockStmt> Parser::parseBlock() {
     const Token& braceToken = consume(TokenType::LBrace, "Expected '{'");
     auto block = std::make_unique<BlockStmt>(SourceLocation{braceToken.line, braceToken.column});
@@ -108,6 +178,9 @@ std::unique_ptr<BlockStmt> Parser::parseBlock() {
 
 std::unique_ptr<Stmt> Parser::parseStatement() {
     if (check(TokenType::KeywordIf)) return parseIfStatement();
+    if (check(TokenType::KeywordWhile)) return parseWhileStatement();
+    if (check(TokenType::KeywordBreak)) return parseBreakStatement();
+    if (check(TokenType::KeywordContinue)) return parseContinueStatement();
     if (check(TokenType::KeywordReturn)) return parseReturnStatement();
 
     std::size_t save = current_;
@@ -159,9 +232,37 @@ std::unique_ptr<Stmt> Parser::parseIfStatement() {
     return stmt;
 }
 
+std::unique_ptr<Stmt> Parser::parseWhileStatement() {
+    const Token& whileToken = consume(TokenType::KeywordWhile, "Expected 'while'");
+    consume(TokenType::LParen, "Expected '('");
+    auto condition = parseExpression();
+    consume(TokenType::RParen, "Expected ')'");
+    auto body = parseBlock();
+
+    auto stmt = std::make_unique<WhileStmt>(SourceLocation{whileToken.line, whileToken.column});
+    stmt->condition = std::move(condition);
+    stmt->body = std::move(body);
+    return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::parseBreakStatement() {
+    const Token& breakToken = consume(TokenType::KeywordBreak, "Expected 'break'");
+    consume(TokenType::Semicolon, "Expected ';'");
+    return std::make_unique<BreakStmt>(SourceLocation{breakToken.line, breakToken.column});
+}
+
+std::unique_ptr<Stmt> Parser::parseContinueStatement() {
+    const Token& continueToken = consume(TokenType::KeywordContinue, "Expected 'continue'");
+    consume(TokenType::Semicolon, "Expected ';'");
+    return std::make_unique<ContinueStmt>(SourceLocation{continueToken.line, continueToken.column});
+}
+
 std::unique_ptr<Stmt> Parser::parseReturnStatement() {
     const Token& returnToken = consume(TokenType::KeywordReturn, "Expected 'return'");
-    auto expr = parseExpression();
+    std::unique_ptr<Expr> expr;
+    if (!check(TokenType::Semicolon)) {
+        expr = parseExpression();
+    }
     consume(TokenType::Semicolon, "Expected ';'");
     return std::make_unique<ReturnStmt>(std::move(expr), SourceLocation{returnToken.line, returnToken.column});
 }

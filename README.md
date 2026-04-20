@@ -1,82 +1,64 @@
 # Voltis
 
-[![License](https://img.shields.io/badge/license-VCL%20%2B%20CC--BY%204.0-blue)](LICENSE)
-[![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](compiler/README.md)
-[![Voltis](https://img.shields.io/badge/language-Voltis-6f42c1)](docs/spec/syntax.md)
-[![Stage](https://img.shields.io/badge/stage-early%20alpha-orange)](ROADMAP.md)
-[![GitHub](https://img.shields.io/badge/GitHub-repository-181717?logo=github)](https://github.com/MaksimirKurtov/Voltis)
+> A Windows-first, native-compiled language project with a real compiler pipeline.
+
+[![Build](https://img.shields.io/badge/build-ctest%2025%2F25%20passing-brightgreen)](tests/CMakeLists.txt)
+[![Repository Status](https://img.shields.io/badge/status-public%20alpha-blue)](ROADMAP.md)
+[![Language Stage](https://img.shields.io/badge/language%20stage-early%20compiler%20maturity-orange)](docs/whitepaper.md)
+[![License](https://img.shields.io/badge/license-VCL%20%2B%20CC--BY%204.0-6f42c1)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D6)](docs/spec/backend.md)
+[![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](compiler/README.md)
 
-📓 [Whitepaper](docs/whitepaper.md) · 💬 [Discussions](https://github.com/MaksimirKurtov/Voltis/discussions) · 📚 [Wiki](https://github.com/MaksimirKurtov/Voltis/wiki)
+📖 [Whitepaper](docs/whitepaper.md) · 🧭 [Spec Index](docs/spec/README.md) · 🧪 [Examples Guide](docs/examples.md) · 🤝 [Contributing](CONTRIBUTING.md) · 🏛️ [Governance](GOVERNANCE.md)
 
-**Voltis** is an early-stage native compiled language with a real working pipeline:
+Voltis is an early-stage but real language toolchain.  
+Current default path:
 
-`source -> lexer -> parser -> AST -> semantic analysis -> VIR -> backend -> Windows x64 .exe`
+`source -> lexer -> parser -> AST -> semantic analysis -> VIR -> backend -> Windows x64 PE .exe`
 
-It is not an interpreter and not a transpiler-first project.
+Voltis is **not** an interpreter and is **not** a transpile-first architecture.
 
-## Contents
+## Table of contents
 
-- [Quick start](#quick-start)
-- [Examples](#examples)
+- [Hello world](#hello-world)
 - [What works today](#what-works-today)
-- [Current limits](#current-limits)
+- [What is still missing](#what-is-still-missing)
 - [Architecture overview](#architecture-overview)
+- [Quick start](#quick-start)
 - [Compile commands](#compile-commands)
 - [Project layout](#project-layout)
-- [Docs and governance](#docs-and-governance)
+- [Documentation and authority](#documentation-and-authority)
 
-## Quick start
+## Hello world
 
-### 1. Build
-
-```bash
-# Windows (MinGW)
-cmake -S . -B build -G "MinGW Makefiles"
-cmake --build build -j
-
-# Linux/macOS or default generator
-cmake -S . -B build
-cmake --build build -j
+```voltis
+public fn main() -> int32 {
+    print("Hello from Voltis");
+    return 0;
+}
 ```
-
-### 2. Run tests
-
-```bash
-ctest --test-dir build --output-on-failure
-```
-
-### 3. Compile a sample
-
-```bash
-build/voltisc examples/hello.vlt -o hello.exe
-```
-
-## Examples
-
-Want runnable sample programs first? Start here:
-
-- **Examples index:** [Examples](docs/examples.md)
-- Includes a **downloadable file table** and quick usage notes.
 
 ## What works today
 
-| Area | Status |
+| Area | Current status |
 |---|---|
-| Frontend pipeline | Lexer, parser, AST, semantic checks for implemented subset |
-| IR | Typed VIR generation (`src/vir.*`, `src/lowering.*`) |
-| Native backend | Windows x64 PE executable emission (default mode) |
-| LLVM path | LLVM IR text emission with `--emit-llvm` |
-| Diagnostics | Parser and semantic diagnostics for symbol/type/control-flow issues |
-| Tests | CMake/CTest suite with parser, sema, VIR, and native compile/runtime cases |
+| Frontend | Lexer, parser, AST, semantic analysis for the implemented subset |
+| Type system | `int32`, `float32`, `float64`, `string`, `bool`, `void` |
+| Control flow | `if/else`, `while`, `break`, `continue`, `return`/`return;` |
+| Conversions | `ToString`, `ToInt32`, `ToFloat32`, `ToFloat64`, `ToBool`, `Round`, `Floor`, `Ceil` |
+| Interop | `import` + `extern fn ... from ...;` declarations with PE IAT-backed DLL calls |
+| IR | Typed VIR model and lowering (`src/vir.*`, `src/lowering.*`) |
+| Backends | Native PE x64 executable output (default) + LLVM IR text (`--emit-llvm`) |
+| Validation | CMake/CTest suite with parser, sema, VIR, and runtime-oriented cases |
 
-## Current limits
+## What is still missing
 
-| Category | Not yet implemented |
+| Category | Not complete yet |
 |---|---|
-| Language surface | Modules, user-defined types, generics, full interop model |
-| Backend maturity | Full DLL workflow, broader ABI coverage, optimization pipeline |
-| Tooling | Formatter, language server, package manager, debugger integration |
+| Language surface | User-defined type system, generics, module/package system beyond direct DLL imports |
+| Backend maturity | Full DLL/import-lib workflow, wider ABI coverage, richer target controls |
+| Optimization | VIR pass pipeline and optimization stages |
+| Tooling | Formatter, LSP, package manager, debugger workflow |
 
 ## Architecture overview
 
@@ -88,16 +70,43 @@ Want runnable sample programs first? Start here:
   -> semantic analysis
   -> VIR lowering
   -> backend abstraction
-     -> PE x64 backend (default, native .exe)
-     -> LLVM IR text backend (--emit-llvm)
+       -> PE x64 backend (default native executable)
+       -> LLVM IR text backend (--emit-llvm)
 ```
 
-See [docs/architecture.md](docs/architecture.md) and [docs/spec/backend.md](docs/spec/backend.md).
+More detail: [docs/architecture.md](docs/architecture.md) and [docs/spec/backend.md](docs/spec/backend.md).
+
+## Quick start
+
+### 1) Build
+
+```bash
+# Windows (MinGW)
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build -j
+
+# Default generator (including Linux/macOS)
+cmake -S . -B build
+cmake --build build -j
+```
+
+### 2) Run tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+### 3) Compile and run
+
+```bash
+build/voltisc examples/hello.vlt -o hello.exe
+./hello.exe
+```
 
 ## Compile commands
 
 ```bash
-# Native executable (default path)
+# Native executable (default)
 build/voltisc examples/hello.vlt -o hello.exe
 
 # Emit VIR text
@@ -106,7 +115,7 @@ build/voltisc examples/hello.vlt --emit-vir -o hello.vir
 # Emit LLVM IR text
 build/voltisc examples/hello.vlt --emit-llvm -o hello.ll
 
-# Optional bootstrap C++ path (temporary)
+# Temporary bootstrap C++ path (non-production)
 build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 ```
 
@@ -125,21 +134,19 @@ build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
 └── tests/
 ```
 
-`src/` and `tests/` are the current compiler implementation roots used by the active CMake build.
+`src/` and `tests/` are the active implementation roots used by CMake.
 
-## Docs and governance
+## Documentation and authority
 
 | Document | Purpose |
 |---|---|
-| [docs/whitepaper.md](docs/whitepaper.md) | Design rationale and direction |
-| [Examples](docs/examples.md) | Example file index + quick language reference |
-| [docs/spec/syntax.md](docs/spec/syntax.md) | Syntax specification (implemented subset + direction) |
-| [docs/spec/types.md](docs/spec/types.md) | Type system specification |
-| [docs/spec/conversions.md](docs/spec/conversions.md) | Conversion model and rules |
-| [docs/spec/control_flow.md](docs/spec/control_flow.md) | Control-flow semantics |
-| [docs/spec/backend.md](docs/spec/backend.md) | Compiler/backend architecture and outputs |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and review policy |
-| [GOVERNANCE.md](GOVERNANCE.md) | Language authority and project governance |
-| [LICENSE](LICENSE) | Compiler code license |
-| [SPEC_LICENSE.md](SPEC_LICENSE.md) | Documentation/spec license (CC BY 4.0) |
-| [ROADMAP.md](ROADMAP.md) | Short/mid/long-term direction |
+| [docs/whitepaper.md](docs/whitepaper.md) | Vision, architecture rationale, and project direction |
+| [docs/spec/README.md](docs/spec/README.md) | Normative spec entrypoint |
+| [docs/examples.md](docs/examples.md) | Quick reference with runnable feature examples |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | PR workflow and contribution rules |
+| [GOVERNANCE.md](GOVERNANCE.md) | Language authority and decision policy |
+| [ROADMAP.md](ROADMAP.md) | Short/mid/long-term execution plan |
+| [LICENSE](LICENSE) | Compiler code license (VCL) |
+| [SPEC_LICENSE.md](SPEC_LICENSE.md) | Spec/docs license (CC BY 4.0) |
+
+Language authority is defined by this repository and its spec documents. See [GOVERNANCE.md](GOVERNANCE.md).

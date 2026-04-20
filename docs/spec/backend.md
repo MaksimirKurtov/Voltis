@@ -57,3 +57,9 @@ Current implementation is Windows x64 focused for native PE emission. Cross-plat
 - improve diagnostics and artifact validation
 - add stronger linker/DLL workflow support
 - introduce optimization passes over VIR
+
+## 7. Current DLL interop behavior
+
+- `import` + `extern fn ... from ...;` declarations are lowered into VIR extern metadata.
+- The PE backend binds extern calls through the generated IAT and emits indirect calls (`call [rip+disp32]`) to imported symbols.
+- The LLVM text backend emits `declare` signatures for extern functions and direct call sites using those declarations.

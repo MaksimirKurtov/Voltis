@@ -12,6 +12,7 @@ This page is a practical quick reference for the **currently implemented subset*
 | [control_flow.vlt](../examples/control_flow.vlt?raw=1) | Demonstrates `if/else`, `while`, `break`, `continue`, and helper functions. |
 | [conversions.vlt](../examples/conversions.vlt?raw=1) | Demonstrates `ToInt32`, `ToFloat32`, `ToFloat64`, `ToBool`, `Round`, `Floor`, and `Ceil`. |
 | [advanced_control_flow.vlt](../examples/advanced_control_flow.vlt?raw=1) | Larger control-flow sample with loop accumulation and function calls. |
+| [windows_api.vlt](../examples/windows_api.vlt?raw=1) | Demonstrates DLL import declarations and external Windows API calls. |
 
 ## Variables
 
@@ -43,8 +44,18 @@ Implemented primitive types:
 | Syntax | Explanation |
 |--------|------------|
 | <pre><code>public fn add(int32 a, int32 b) -&gt; int32 {<br>    return a + b;<br>}</code></pre> | Function with explicit typed parameters and return type |
+| <pre><code>extern fn GetCurrentProcessId() -&gt; int32 from "kernel32.dll";</code></pre> | External function declaration bound to an imported DLL |
 | <pre><code>public fn banner() -&gt; void {<br>    print("hi");<br>    return;<br>}</code></pre> | `void` function with explicit `return;` |
 | <pre><code>public fn main() -&gt; int32 {<br>    int32 total = add(2, 3);<br>    print(total.ToString());<br>    return 0;<br>}</code></pre> | Direct function calls with typed locals |
+
+## Imports and DLL interop
+
+| Syntax | Explanation |
+|--------|------------|
+| <pre><code>import "kernel32.dll";</code></pre> | Import a DLL by string path |
+| <pre><code>import &lt;kernel32.dll&gt;;</code></pre> | Alternate angle-bracket import form |
+| <pre><code>extern fn GetCurrentProcessId() -&gt; int32 from "kernel32.dll";</code></pre> | Bind an external symbol to an imported DLL |
+| <pre><code>int32 pid = GetCurrentProcessId();</code></pre> | Call an external function like any direct function call |
 
 ## Conditionals
 

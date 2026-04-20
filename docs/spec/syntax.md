@@ -13,12 +13,21 @@ Navigation: [Spec index](README.md) · [Types](types.md) · [Control flow](contr
 
 ## 2. Top-level declarations (implemented)
 
-The implemented subset supports top-level function declarations:
+The implemented subset supports imports, extern declarations, and top-level functions:
 
 ```voltis
+import "kernel32.dll";
+extern fn GetCurrentProcessId() -> int32 from "kernel32.dll";
+
 public fn add(int32 a, int32 b) -> int32 {
     return a + b;
 }
+```
+
+Alternate angle-bracket imports are accepted:
+
+```voltis
+Import <kernel32.dll>;
 ```
 
 Recognized modifiers are currently lexed/parsed and accepted before declarations/locals:
@@ -28,12 +37,14 @@ Recognized modifiers are currently lexed/parsed and accepted before declarations
 
 In the current subset, modifier semantics are limited; they are primarily syntactic.
 
-## 3. Function syntax
+## 3. Declaration syntax
 
 ```text
-FunctionDecl ::= Modifiers? "fn" Identifier "(" ParamList? ")" "->" Type Block
-ParamList     ::= Param ("," Param)*
-Param         ::= Type Identifier
+ImportDecl         ::= "import" (StringLiteral | "<" PathTokens ">") ";"
+ExternFunctionDecl ::= Modifiers? "extern" "fn" Identifier "(" ParamList? ")" "->" Type "from" (StringLiteral | "<" PathTokens ">") ";"
+FunctionDecl       ::= Modifiers? "fn" Identifier "(" ParamList? ")" "->" Type Block
+ParamList          ::= Param ("," Param)*
+Param              ::= Type Identifier
 ```
 
 ## 4. Statements (implemented subset)
@@ -76,9 +87,7 @@ Operator precedence follows conventional grouping:
 The following may appear in design docs but are not currently implemented as language surface in the parser/sema subset:
 
 - user-defined structs/classes/enums
-- modules/imports
 - `for`/`foreach`/`match`
 - generics
-- full interop declaration syntax
 
 Track direction in [whitepaper](../whitepaper.md) and [roadmap](../../ROADMAP.md).

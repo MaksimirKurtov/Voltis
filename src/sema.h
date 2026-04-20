@@ -4,6 +4,7 @@
 #include "diagnostics.h"
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class SemanticAnalyzer {
@@ -39,6 +40,8 @@ private:
     struct FunctionSymbol {
         std::vector<std::string> paramTypes;
         std::string returnType;
+        bool isExtern = false;
+        std::string importPath;
         SourceLocation location;
     };
 
@@ -49,11 +52,14 @@ private:
 
     DiagnosticBag diagnostics_;
     std::unordered_map<std::string, FunctionSymbol> functions_;
+    std::unordered_set<std::string> importedPaths_;
     std::vector<std::unordered_map<std::string, VariableSymbol>> scopes_;
     std::unordered_map<const Expr*, std::string> expressionTypes_;
     std::unordered_map<const Expr*, ConversionInfo> conversionInfos_;
     std::string currentReturnType_;
+    int loopDepth_ = 0;
 
+    void registerImports(const Program& program);
     void registerFunctions(const Program& program);
     void analyzeFunction(FunctionDecl& function);
     void analyzeBlock(BlockStmt& block, bool createScope);
@@ -82,4 +88,6 @@ private:
     std::string makeTypeErrorType(Expr* expr, const std::string& message);
     std::string setExprType(const Expr* expr, const std::string& type);
     bool isErrorType(const std::string& type) const;
+    bool blockAlwaysReturns(const BlockStmt& block) const;
+    bool statementAlwaysReturns(const Stmt* statement) const;
 };

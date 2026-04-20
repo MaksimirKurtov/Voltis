@@ -129,6 +129,12 @@ public:
             diagnostics_.error({}, "backend-llvm: only LLVM IR text emission is currently implemented");
         }
 
+        externFunctions_.clear();
+        for (const auto& externFunction : module.externFunctions) {
+            externFunctions_[externFunction.name] = externFunction;
+            requireExternDeclaration(externFunction.name, externFunction.params, externFunction.returnType, externFunction.location);
+        }
+
         for (const auto& function : module.functions) {
             functionBodies_.push_back(emitFunction(function));
         }
@@ -182,6 +188,7 @@ private:
     std::unordered_map<std::string, std::string> stringGlobalSymbolByValue_;
     std::vector<std::string> declarations_;
     std::unordered_set<std::string> declarationSet_;
+    std::unordered_map<std::string, vir::ExternFunctionDecl> externFunctions_;
     std::vector<std::string> functionBodies_;
     std::uint32_t nextStringId_ = 0;
 
@@ -193,6 +200,23 @@ private:
         if (declarationSet_.insert(declaration).second) {
             declarations_.push_back(declaration);
         }
+    }
+
+    void requireExternDeclaration(
+        const std::string& name,
+        const std::vector<vir::Parameter>& params,
+        vir::Type returnType,
+        const SourceLocation&) {
+        std::ostringstream declaration;
+        declaration << "declare " << llvmType(returnType) << " " << functionSymbol(name) << "(";
+        for (std::size_t i = 0; i < params.size(); ++i) {
+            if (i > 0) {
+                declaration << ", ";
+            }
+            declaration << llvmType(params[i].type);
+        }
+        declaration << ")";
+        requireDeclaration(declaration.str());
     }
 
     EmittedValue lookupValue(
@@ -721,6 +745,24 @@ private:
         }
 
         const std::string callee = functionSymbol(inst.callee);
+        if (inst.isExtern) {
+            const auto externIt = externFunctions_.find(inst.callee);
+            if (externIt != externFunctions_.end()) {
+                requireExternDeclaration(externIt->second.name, externIt->second.params, externIt->second.returnType, location);
+            } else {
+                std::vector<vir::Parameter> inferredParams;
+                inferredParams.reserve(inst.argTypes.size());
+                for (std::size_t i = 0; i < inst.argTypes.size(); ++i) {
+                    inferredParams.push_back(vir::Parameter{
+                        "arg" + std::to_string(i),
+                        inst.argTypes[i],
+                        location,
+                    });
+                }
+                requireExternDeclaration(inst.callee, inferredParams, inst.returnType, location);
+            }
+        }
+
         if (vir::isVoid(inst.returnType)) {
             out << "  call void " << callee << "(" << args.str() << ")\n";
             return;

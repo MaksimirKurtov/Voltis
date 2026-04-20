@@ -91,6 +91,22 @@ static std::string sanitizeIdentifier(const std::string& name) {
     return out;
 }
 
+static std::string toLowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static std::string normalizeImportLibraryName(const std::string& path) {
+    if (path.empty()) {
+        return {};
+    }
+    const std::size_t slashPos = path.find_last_of("/\\");
+    const std::string fileName = (slashPos == std::string::npos) ? path : path.substr(slashPos + 1);
+    return toLowerAscii(fileName);
+}
+
 class SectionBuilder {
 public:
     explicit SectionBuilder(SectionId id) : id_(id) {}
@@ -767,6 +783,10 @@ private:
     }
 
     bool emitModule(const vir::Module& module, DiagnosticBag& diagnostics) {
+        if (!registerExternImports(module, diagnostics)) {
+            return false;
+        }
+
         const auto mainIt = std::find_if(module.functions.begin(), module.functions.end(), [](const vir::Function& fn) {
             return fn.name == "main";
         });
@@ -793,6 +813,21 @@ private:
             }
         }
 
+        return true;
+    }
+
+    bool registerExternImports(const vir::Module& module, DiagnosticBag& diagnostics) {
+        externImports_.clear();
+        for (const auto& externFunction : module.externFunctions) {
+            const std::string dll = normalizeImportLibraryName(externFunction.importPath);
+            if (dll.empty()) {
+                diagnostics.error(externFunction.location, "direct pe backend: extern function '" + externFunction.name + "' has an empty import path");
+                return false;
+            }
+
+            externImports_[externFunction.name] = dll;
+            image_.imports().addImport(dll, externFunction.name);
+        }
         return true;
     }
 
@@ -1463,8 +1498,24 @@ private:
             }
         }
 
-        const std::string label = functionLabel(inst.callee);
-        asm_.emitCallRel32(label);
+        if (inst.isExtern) {
+            std::string dll;
+            const auto externIt = externImports_.find(inst.callee);
+            if (externIt != externImports_.end()) {
+                dll = externIt->second;
+            } else {
+                dll = normalizeImportLibraryName(inst.importPath);
+            }
+
+            if (dll.empty()) {
+                diagnostics.error({}, "direct pe backend: extern call '" + inst.callee + "' is missing an import library");
+                return false;
+            }
+            asm_.emitCallIat(importLabel(dll, inst.callee));
+        } else {
+            const std::string label = functionLabel(inst.callee);
+            asm_.emitCallRel32(label);
+        }
 
         if (inst.result.has_value()) {
             const auto result = layout.frame.values.find(inst.result->index);
@@ -1948,6 +1999,7 @@ private:
     PeImage image_;
     Assembler asm_;
     std::unordered_map<std::string, Symbol> symbols_;
+    std::unordered_map<std::string, std::string> externImports_;
     std::unordered_map<std::string, std::string> scratch_;
     std::unordered_map<std::string, std::string> tempLabels_;
     std::size_t tempCounter_ = 0;

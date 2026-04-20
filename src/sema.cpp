@@ -6,20 +6,43 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 namespace {
 constexpr const char* kErrorType = "<error>";
+
+std::string normalizeImportPathKey(std::string path) {
+    std::string normalized;
+    normalized.reserve(path.size());
+    for (char c : path) {
+        if (c == '\\') {
+            normalized.push_back('/');
+            continue;
+        }
+        normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return normalized;
+}
+
+bool isBlankString(std::string_view value) {
+    return std::all_of(value.begin(), value.end(), [](char c) {
+        return std::isspace(static_cast<unsigned char>(c));
+    });
+}
 }
 
 bool SemanticAnalyzer::analyze(Program& program) {
     diagnostics_ = DiagnosticBag{};
     functions_.clear();
+    importedPaths_.clear();
     scopes_.clear();
     expressionTypes_.clear();
     conversionInfos_.clear();
     currentReturnType_ = "void";
+    loopDepth_ = 0;
 
+    registerImports(program);
     registerFunctions(program);
     for (auto& function : program.functions) {
         analyzeFunction(function);
@@ -40,6 +63,20 @@ const std::unordered_map<const Expr*, SemanticAnalyzer::ConversionInfo>& Semanti
     return conversionInfos_;
 }
 
+void SemanticAnalyzer::registerImports(const Program& program) {
+    for (const auto& importDecl : program.imports) {
+        if (importDecl.path.empty() || isBlankString(importDecl.path)) {
+            diagnostics_.error(importDecl.location, "import path cannot be empty");
+            continue;
+        }
+
+        const std::string key = normalizeImportPathKey(importDecl.path);
+        if (!importedPaths_.insert(key).second) {
+            diagnostics_.error(importDecl.location, "duplicate import '" + importDecl.path + "'");
+        }
+    }
+}
+
 void SemanticAnalyzer::registerFunctions(const Program& program) {
     for (const auto& function : program.functions) {
         if (functions_.find(function.name) != functions_.end()) {
@@ -57,15 +94,54 @@ void SemanticAnalyzer::registerFunctions(const Program& program) {
             if (!isKnownType(param.type)) {
                 diagnostics_.error(param.location, "unknown parameter type '" + param.type + "' for '" + param.name + "'");
             }
+            if (param.type == "void") {
+                diagnostics_.error(param.location, "parameter '" + param.name + "' cannot use type 'void'");
+            }
             paramTypes.push_back(param.type);
         }
 
-        functions_.emplace(function.name, FunctionSymbol{std::move(paramTypes), function.returnType, function.location});
+        functions_.emplace(function.name, FunctionSymbol{std::move(paramTypes), function.returnType, false, "", function.location});
+    }
+
+    for (const auto& externFunction : program.externFunctions) {
+        if (functions_.find(externFunction.name) != functions_.end()) {
+            diagnostics_.error(externFunction.location, "duplicate function '" + externFunction.name + "' in global scope");
+            continue;
+        }
+
+        if (!isKnownType(externFunction.returnType)) {
+            diagnostics_.error(externFunction.location, "unknown return type '" + externFunction.returnType + "' for function '" + externFunction.name + "'");
+        }
+
+        if (externFunction.importPath.empty() || isBlankString(externFunction.importPath)) {
+            diagnostics_.error(externFunction.location, "extern function '" + externFunction.name + "' must specify a non-empty import path");
+        } else if (importedPaths_.find(normalizeImportPathKey(externFunction.importPath)) == importedPaths_.end()) {
+            diagnostics_.error(externFunction.location,
+                "extern function '" + externFunction.name + "' references '" + externFunction.importPath +
+                "', but no matching import declaration was found");
+        }
+
+        std::vector<std::string> paramTypes;
+        paramTypes.reserve(externFunction.params.size());
+        for (const auto& param : externFunction.params) {
+            if (!isKnownType(param.type)) {
+                diagnostics_.error(param.location, "unknown parameter type '" + param.type + "' for '" + param.name + "'");
+            }
+            if (param.type == "void") {
+                diagnostics_.error(param.location, "parameter '" + param.name + "' cannot use type 'void'");
+            }
+            paramTypes.push_back(param.type);
+        }
+
+        functions_.emplace(
+            externFunction.name,
+            FunctionSymbol{std::move(paramTypes), externFunction.returnType, true, externFunction.importPath, externFunction.location});
     }
 }
 
 void SemanticAnalyzer::analyzeFunction(FunctionDecl& function) {
     currentReturnType_ = function.returnType;
+    loopDepth_ = 0;
     pushScope();
 
     for (const auto& param : function.params) {
@@ -73,6 +149,9 @@ void SemanticAnalyzer::analyzeFunction(FunctionDecl& function) {
     }
 
     analyzeBlock(*function.body, false);
+    if (currentReturnType_ != "void" && !blockAlwaysReturns(*function.body)) {
+        diagnostics_.error(function.location, "function '" + function.name + "' with return type '" + currentReturnType_ + "' is missing a return statement on some paths");
+    }
     popScope();
 }
 
@@ -97,11 +176,19 @@ void SemanticAnalyzer::analyzeStatement(Stmt* statement) {
     }
 
     if (auto* returnStmt = dynamic_cast<ReturnStmt*>(statement)) {
-        const std::string exprType = analyzeExpr(returnStmt->expr.get());
         if (currentReturnType_ == "void") {
-            diagnostics_.error(returnStmt->location, "void function cannot return a value");
+            if (returnStmt->expr) {
+                diagnostics_.error(returnStmt->location, "void function cannot return a value");
+            }
             return;
         }
+
+        if (!returnStmt->expr) {
+            diagnostics_.error(returnStmt->location, "non-void function must return a value of type '" + currentReturnType_ + "'");
+            return;
+        }
+
+        const std::string exprType = analyzeExpr(returnStmt->expr.get());
         if (!isAssignable(currentReturnType_, exprType)) {
             diagnostics_.error(returnStmt->location, "return type mismatch: expected '" + currentReturnType_ + "', got '" + exprType + "'");
         }
@@ -164,6 +251,32 @@ void SemanticAnalyzer::analyzeStatement(Stmt* statement) {
         analyzeBlock(*ifStmt->thenBlock, true);
         if (ifStmt->elseBlock) {
             analyzeBlock(*ifStmt->elseBlock, true);
+        }
+        return;
+    }
+
+    if (auto* whileStmt = dynamic_cast<WhileStmt*>(statement)) {
+        const std::string conditionType = analyzeExpr(whileStmt->condition.get());
+        if (!isErrorType(conditionType) && conditionType != "bool") {
+            diagnostics_.error(whileStmt->condition->location, "while condition must be 'bool', got '" + conditionType + "'");
+        }
+
+        ++loopDepth_;
+        analyzeBlock(*whileStmt->body, true);
+        --loopDepth_;
+        return;
+    }
+
+    if (dynamic_cast<BreakStmt*>(statement)) {
+        if (loopDepth_ <= 0) {
+            diagnostics_.error(statement->location, "'break' is only valid inside a loop");
+        }
+        return;
+    }
+
+    if (dynamic_cast<ContinueStmt*>(statement)) {
+        if (loopDepth_ <= 0) {
+            diagnostics_.error(statement->location, "'continue' is only valid inside a loop");
         }
         return;
     }
@@ -598,4 +711,32 @@ std::string SemanticAnalyzer::setExprType(const Expr* expr, const std::string& t
 
 bool SemanticAnalyzer::isErrorType(const std::string& type) const {
     return type == kErrorType;
+}
+
+bool SemanticAnalyzer::blockAlwaysReturns(const BlockStmt& block) const {
+    for (const auto& statement : block.statements) {
+        if (statementAlwaysReturns(statement.get())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SemanticAnalyzer::statementAlwaysReturns(const Stmt* statement) const {
+    if (dynamic_cast<const ReturnStmt*>(statement)) {
+        return true;
+    }
+
+    if (auto* block = dynamic_cast<const BlockStmt*>(statement)) {
+        return blockAlwaysReturns(*block);
+    }
+
+    if (auto* ifStmt = dynamic_cast<const IfStmt*>(statement)) {
+        if (!ifStmt->elseBlock) {
+            return false;
+        }
+        return blockAlwaysReturns(*ifStmt->thenBlock) && blockAlwaysReturns(*ifStmt->elseBlock);
+    }
+
+    return false;
 }

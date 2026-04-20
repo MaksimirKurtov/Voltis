@@ -1,0 +1,9 @@
+import "kernel32.dll";
+
+extern fn GetCurrentProcessId() -> int32 from "kernel32.dll";
+
+public fn main() -> int32 {
+    int32 pid = GetCurrentProcessId();
+    print("pid: " + pid.ToString());
+    return 0;
+}

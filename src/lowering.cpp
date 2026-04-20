@@ -12,11 +12,18 @@ constexpr const char* kErrorType = "<error>";
 struct FunctionSignature {
     std::vector<vir::Type> paramTypes;
     vir::Type returnType;
+    bool isExtern = false;
+    std::string importPath;
 };
 
 struct ValueRef {
     vir::Type type{};
     std::optional<vir::ValueId> value;
+};
+
+struct LoopTargets {
+    vir::BlockId continueTarget;
+    vir::BlockId breakTarget;
 };
 
 bool typeFromString(const std::string& typeName, vir::Type& outType) {
@@ -89,6 +96,33 @@ public:
         : program_(program), expressionTypes_(expressionTypes), conversionInfos_(conversionInfos) {}
 
     LoweringResult run() {
+        result_.module.imports.reserve(program_.imports.size());
+        for (const auto& importDecl : program_.imports) {
+            result_.module.imports.push_back(vir::ImportDecl{importDecl.path});
+        }
+
+        result_.module.externFunctions.reserve(program_.externFunctions.size());
+        for (const auto& externFunction : program_.externFunctions) {
+            vir::ExternFunctionDecl loweredExtern;
+            loweredExtern.name = externFunction.name;
+            loweredExtern.importPath = externFunction.importPath;
+            loweredExtern.location = externFunction.location;
+            if (!typeFromString(externFunction.returnType, loweredExtern.returnType)) {
+                result_.diagnostics.error(externFunction.location, "lowering: unknown return type '" + externFunction.returnType + "'");
+                loweredExtern.returnType = vir::Type{vir::TypeKind::Void};
+            }
+            loweredExtern.params.reserve(externFunction.params.size());
+            for (const auto& param : externFunction.params) {
+                vir::Type paramType{};
+                if (!typeFromString(param.type, paramType)) {
+                    result_.diagnostics.error(param.location, "lowering: unknown parameter type '" + param.type + "'");
+                    paramType = vir::Type{vir::TypeKind::Void};
+                }
+                loweredExtern.params.push_back(vir::Parameter{param.name, paramType, param.location});
+            }
+            result_.module.externFunctions.push_back(std::move(loweredExtern));
+        }
+
         collectFunctionSignatures();
         for (const auto& functionDecl : program_.functions) {
             lowerFunction(functionDecl);
@@ -107,6 +141,7 @@ private:
     vir::BlockId currentBlock_{};
     std::uint32_t nextValueId_ = 0;
     std::vector<std::unordered_map<std::string, vir::LocalId>> scopes_;
+    std::vector<LoopTargets> loopTargets_;
     std::uint32_t namedBlockCounter_ = 0;
 
     void collectFunctionSignatures() {
@@ -131,6 +166,31 @@ private:
 
             signatures_[functionDecl.name] = signature;
         }
+
+        for (const auto& externFunction : program_.externFunctions) {
+            FunctionSignature signature;
+            signature.isExtern = true;
+            signature.importPath = externFunction.importPath;
+
+            vir::Type returnType{};
+            if (!typeFromString(externFunction.returnType, returnType)) {
+                result_.diagnostics.error(externFunction.location, "lowering: unknown return type '" + externFunction.returnType + "'");
+                returnType = vir::Type{vir::TypeKind::Void};
+            }
+            signature.returnType = returnType;
+
+            signature.paramTypes.reserve(externFunction.params.size());
+            for (const auto& param : externFunction.params) {
+                vir::Type paramType{};
+                if (!typeFromString(param.type, paramType)) {
+                    result_.diagnostics.error(param.location, "lowering: unknown parameter type '" + param.type + "'");
+                    paramType = vir::Type{vir::TypeKind::Void};
+                }
+                signature.paramTypes.push_back(paramType);
+            }
+
+            signatures_[externFunction.name] = std::move(signature);
+        }
     }
 
     void lowerFunction(const FunctionDecl& functionDecl) {
@@ -154,6 +214,7 @@ private:
         nextValueId_ = 0;
         namedBlockCounter_ = 0;
         scopes_.clear();
+        loopTargets_.clear();
 
         currentBlock_ = createBlock("entry");
         pushScope();
@@ -209,6 +270,19 @@ private:
         }
 
         if (auto returnStmt = dynamic_cast<const ReturnStmt*>(statement)) {
+            if (!returnStmt->expr) {
+                if (!vir::isVoid(currentFunction_->returnType)) {
+                    result_.diagnostics.error(returnStmt->location,
+                        "lowering: non-void function return requires a value of type '" + vir::toString(currentFunction_->returnType) + "'");
+                }
+                setTerminator(vir::Terminator{
+                    vir::Terminator::Kind::Return,
+                    returnStmt->location,
+                    vir::ReturnTerminator{std::nullopt, vir::Type{vir::TypeKind::Void}}
+                });
+                return;
+            }
+
             ValueRef value = lowerExpr(returnStmt->expr.get());
             ValueRef castValue = castTo(value, currentFunction_->returnType, returnStmt->location, std::nullopt, false);
             if (vir::isVoid(currentFunction_->returnType) || !castValue.value.has_value()) {
@@ -217,13 +291,14 @@ private:
                     returnStmt->location,
                     vir::ReturnTerminator{std::nullopt, vir::Type{vir::TypeKind::Void}}
                 });
-            } else {
-                setTerminator(vir::Terminator{
-                    vir::Terminator::Kind::Return,
-                    returnStmt->location,
-                    vir::ReturnTerminator{castValue.value, castValue.type}
-                });
+                return;
             }
+
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::Return,
+                returnStmt->location,
+                vir::ReturnTerminator{castValue.value, castValue.type}
+            });
             return;
         }
 
@@ -277,6 +352,37 @@ private:
             lowerIfStatement(*ifStmt);
             return;
         }
+
+        if (auto whileStmt = dynamic_cast<const WhileStmt*>(statement)) {
+            lowerWhileStatement(*whileStmt);
+            return;
+        }
+
+        if (auto breakStmt = dynamic_cast<const BreakStmt*>(statement)) {
+            if (loopTargets_.empty()) {
+                result_.diagnostics.error(breakStmt->location, "lowering: 'break' used outside of a loop");
+                return;
+            }
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::Branch,
+                breakStmt->location,
+                vir::BranchTerminator{loopTargets_.back().breakTarget}
+            });
+            return;
+        }
+
+        if (auto continueStmt = dynamic_cast<const ContinueStmt*>(statement)) {
+            if (loopTargets_.empty()) {
+                result_.diagnostics.error(continueStmt->location, "lowering: 'continue' used outside of a loop");
+                return;
+            }
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::Branch,
+                continueStmt->location,
+                vir::BranchTerminator{loopTargets_.back().continueTarget}
+            });
+            return;
+        }
     }
 
     void lowerIfStatement(const IfStmt& ifStmt) {
@@ -320,6 +426,50 @@ private:
         }
 
         currentBlock_ = mergeBlock;
+    }
+
+    void lowerWhileStatement(const WhileStmt& whileStmt) {
+        const vir::BlockId conditionBlock = createBlock("while.cond");
+        const vir::BlockId bodyBlock = createBlock("while.body");
+        const vir::BlockId exitBlock = createBlock("while.exit");
+
+        setTerminator(vir::Terminator{
+            vir::Terminator::Kind::Branch,
+            whileStmt.location,
+            vir::BranchTerminator{conditionBlock}
+        });
+
+        currentBlock_ = conditionBlock;
+        ValueRef condition = lowerExpr(whileStmt.condition.get());
+        condition = castTo(condition, vir::Type{vir::TypeKind::Bool}, whileStmt.location, std::nullopt, false);
+        if (!condition.value.has_value()) {
+            result_.diagnostics.error(whileStmt.location, "lowering: while condition has no value");
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::Branch,
+                whileStmt.location,
+                vir::BranchTerminator{exitBlock}
+            });
+        } else {
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::CondBranch,
+                whileStmt.location,
+                vir::CondBranchTerminator{*condition.value, bodyBlock, exitBlock}
+            });
+        }
+
+        currentBlock_ = bodyBlock;
+        loopTargets_.push_back(LoopTargets{conditionBlock, exitBlock});
+        lowerBlock(*whileStmt.body, true);
+        loopTargets_.pop_back();
+        if (!hasTerminator(currentBlock_)) {
+            setTerminator(vir::Terminator{
+                vir::Terminator::Kind::Branch,
+                whileStmt.location,
+                vir::BranchTerminator{conditionBlock}
+            });
+        }
+
+        currentBlock_ = exitBlock;
     }
 
     ValueRef lowerExpr(const Expr* expr) {
@@ -549,7 +699,9 @@ private:
                     std::move(args),
                     std::move(argTypes),
                     vir::Type{vir::TypeKind::Void},
-                    true
+                    true,
+                    false,
+                    ""
                 }
             });
             return ValueRef{vir::Type{vir::TypeKind::Void}, std::nullopt};
@@ -588,7 +740,16 @@ private:
         emitInstruction(vir::Instruction{
             vir::Instruction::Kind::Call,
             callExpr.location,
-            vir::CallInst{resultValue, callee->name, std::move(args), std::move(argTypes), signature.returnType, false}
+            vir::CallInst{
+                resultValue,
+                callee->name,
+                std::move(args),
+                std::move(argTypes),
+                signature.returnType,
+                false,
+                signature.isExtern,
+                signature.importPath
+            }
         });
         return ValueRef{signature.returnType, resultValue};
     }
