@@ -39,6 +39,8 @@ set(expected_file_contains)
 set(expected_file_not_contains)
 set(run_emitted FALSE)
 set(expected_run_stdout)
+set(run_without_source FALSE)
+set(expect_benchmark_history FALSE)
 
 if(CASE STREQUAL "valid-default")
     set(source_file "${CASE_DIR}/valid_simple.vlt")
@@ -131,6 +133,19 @@ elseif(CASE STREQUAL "valid-default-dll-import")
         "Built executable:")
     set(run_emitted TRUE)
     set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "benchmark-mode")
+    set(run_without_source TRUE)
+    set(args --benchmark)
+    set(expected_stdout
+        "*** Voltis Benchmark ***"
+        "Compiled Successfully:"
+        "Benchmarked Successfully:"
+        "Total Instructions:"
+        "Benchmark Time Improvement:"
+        "Compile Time Improvement:"
+        "Best Benchmark Time:"
+        "Best Compile Time:")
+    set(expect_benchmark_history TRUE)
 elseif(CASE STREQUAL "valid-emit-vir")
     set(source_file "${CASE_DIR}/valid_simple.vlt")
     set(expected_file "${OUT_DIR}/valid_simple.vir")
@@ -261,8 +276,10 @@ else()
     message(FATAL_ERROR "Unknown CASE '${CASE}'")
 endif()
 
-if(NOT EXISTS "${source_file}")
-    message(FATAL_ERROR "Source file not found: ${source_file}")
+if(NOT run_without_source)
+    if(NOT EXISTS "${source_file}")
+        message(FATAL_ERROR "Source file not found: ${source_file}")
+    endif()
 endif()
 if(NOT EXISTS "${VOLTISC}")
     message(FATAL_ERROR "Compiler executable not found: ${VOLTISC}")
@@ -272,12 +289,21 @@ if(NOT "${expected_file}" STREQUAL "")
     file(REMOVE "${expected_file}")
 endif()
 
-execute_process(
-    COMMAND "${VOLTISC}" "${source_file}" ${args}
-    RESULT_VARIABLE actual_exit
-    OUTPUT_VARIABLE actual_stdout
-    ERROR_VARIABLE actual_stderr
-)
+if(run_without_source)
+    execute_process(
+        COMMAND "${VOLTISC}" ${args}
+        RESULT_VARIABLE actual_exit
+        OUTPUT_VARIABLE actual_stdout
+        ERROR_VARIABLE actual_stderr
+    )
+else()
+    execute_process(
+        COMMAND "${VOLTISC}" "${source_file}" ${args}
+        RESULT_VARIABLE actual_exit
+        OUTPUT_VARIABLE actual_stdout
+        ERROR_VARIABLE actual_stderr
+    )
+endif()
 
 string(REPLACE "\r\n" "\n" actual_stdout "${actual_stdout}")
 string(REPLACE "\r\n" "\n" actual_stderr "${actual_stderr}")
@@ -324,5 +350,29 @@ if(NOT "${expected_file}" STREQUAL "")
         foreach(expected IN LISTS expected_run_stdout)
             assert_contains("${run_stdout}" "${expected}" "CASE ${CASE} emitted runtime stdout")
         endforeach()
+    endif()
+endif()
+
+if(expect_benchmark_history)
+    if(WIN32)
+        set(temp_root "$ENV{TEMP}")
+        if("${temp_root}" STREQUAL "")
+            set(temp_root "$ENV{TMP}")
+        endif()
+    else()
+        set(temp_root "$ENV{TMPDIR}")
+        if("${temp_root}" STREQUAL "")
+            set(temp_root "/tmp")
+        endif()
+    endif()
+
+    if("${temp_root}" STREQUAL "")
+        message(FATAL_ERROR "CASE ${CASE}: unable to resolve temp directory for benchmark history CSV check")
+    endif()
+
+    file(TO_CMAKE_PATH "${temp_root}" temp_root_norm)
+    set(benchmark_csv "${temp_root_norm}/voltis_benchmark_history.csv")
+    if(NOT EXISTS "${benchmark_csv}")
+        message(FATAL_ERROR "CASE ${CASE}: benchmark history CSV missing: ${benchmark_csv}")
     endif()
 endif()

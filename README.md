@@ -49,6 +49,7 @@ public fn main() -> int32 {
 | Interop | `import` + `extern fn ... from ...;` declarations with PE IAT-backed DLL calls |
 | IR | Typed VIR model/lowering plus optimization + structural verification passes (`src/vir.*`, `src/lowering.*`, `src/vir_passes.*`) |
 | Backends | Native PE x64 executable output (default) + LLVM IR text (`--emit-llvm`) |
+| Benchmarking | Embedded benchmark mode (`--benchmark`) with live terminal dashboard and CSV history in temp/AppData |
 | Validation | CMake/CTest suite with parser, sema, VIR, and runtime-oriented cases |
 
 ## What is still missing
@@ -115,6 +116,9 @@ build/voltisc examples/hello.vlt --emit-vir -o hello.vir
 
 # Emit LLVM IR text
 build/voltisc examples/hello.vlt --emit-llvm -o hello.ll
+
+# Run embedded compile+runtime benchmark dashboard (no input file required)
+build/voltisc --benchmark
 
 # Temporary bootstrap C++ path (non-production)
 build/voltisc examples/hello.vlt --bootstrap-cpp --no-link
