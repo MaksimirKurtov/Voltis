@@ -34,6 +34,8 @@ Voltis source (.vlt)
 **Implemented (subset):**
 
 - function symbol registration/checks
+- import declaration registration/checks
+- extern function declaration registration/checks
 - lexical block scopes for locals
 - assignment/return compatibility checks
 - expression typing for literals, unary/binary ops, calls
@@ -44,10 +46,10 @@ Voltis source (.vlt)
 **Not implemented yet (whitepaper-scale semantics):**
 
 - class/struct/member semantics
-- module/import semantics
+- module/package semantics beyond DLL imports
 - nullability/dataflow/control-flow completeness checks
 - ownership/region semantics
-- interop declaration semantics (`extern` DLL/calling conventions)
+- advanced interop semantics (calling conventions, import-library ownership, richer ABI contracts)
 - full modifier semantics (modifiers are parsed but effectively ignored in this subset)
 
 ### VIR status
@@ -62,7 +64,7 @@ Voltis source (.vlt)
 
 - optimization pass pipeline
 - broader lowering coverage for full language surface
-- ABI-aware lowering for interop/advanced runtime features
+- advanced ABI-aware lowering for richer interop/runtime features
 
 ### Backend abstraction + LLVM IR emission status
 
@@ -81,7 +83,7 @@ Direct PE backend coverage currently includes `int32`, `float32`, `float64`, `bo
 **Not implemented yet:**
 
 - explicit lld-link/link.exe orchestration owned independently from the direct backend
-- DLL workflow (`.dll/.lib`) on production path
+- full `.dll/.lib` workflow on production path
 - optimization pipeline between VIR and LLVM lowering
 
 ## 3) What remains for full native toolchain maturity
@@ -89,7 +91,7 @@ Direct PE backend coverage currently includes `int32`, `float32`, `float64`, `bo
 Current repository can produce native executables from Voltis without C++ transpilation. Remaining milestones are:
 
 1. Harden the direct PE backend coverage for more types and operations.
-2. Add explicit linker strategy controls (`lld-link`/`link.exe`) and import-library/DLL support.
+2. Add explicit linker strategy controls (`lld-link`/`link.exe`) and import-library/DLL workflow controls.
 3. Add optimization passes and richer backend validation coverage.
 
 Bootstrap C++ mode remains temporary scaffolding and is not required for the default production-directed compile path.
@@ -106,12 +108,12 @@ Current branch is aligned directionally and now includes first native object/exe
 
 ## 5) Implemented syntax subset guard (docs/examples)
 
-The active parser subset in this repo is function-centric and semicolon-based:
+The active parser subset in this repo is declaration/function-centric and semicolon-based:
 
-- top-level `fn` declarations only
+- top-level `import`, `extern fn ... from ...;`, and `fn` declarations
 - braces for blocks
 - semicolons required for statements
 - primitives: `int32`, `float32`, `float64`, `string`, `bool`, `void`
 - `if/else`, `while`, `break`, `continue`, `return`, local declarations/assignment, direct calls, conversion members
 
-This document intentionally avoids claiming support for classes, modules, extern interop syntax, or full backend maturity (DLL/import-lib, optimizer, custom COFF backend), even though native exe generation is now available.
+This document intentionally avoids claiming support for classes, module/package systems, advanced interop ABI surface, or full backend maturity (DLL/import-lib workflow controls, optimizer, custom COFF backend), even though native exe generation is now available.

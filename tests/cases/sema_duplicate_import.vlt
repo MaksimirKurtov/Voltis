@@ -1,0 +1,6 @@
+import "kernel32.dll";
+import "kernel32.dll";
+
+public fn main() -> int32 {
+    return 0;
+}

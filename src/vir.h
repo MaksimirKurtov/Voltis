@@ -128,6 +128,8 @@ struct CallInst {
     std::vector<Type> argTypes;
     Type returnType;
     bool isBuiltin = false;
+    bool isExtern = false;
+    std::string importPath;
 };
 
 struct Instruction {
@@ -206,7 +208,21 @@ struct Function {
     std::vector<BasicBlock> blocks;
 };
 
+struct ImportDecl {
+    std::string path;
+};
+
+struct ExternFunctionDecl {
+    std::string name;
+    std::string importPath;
+    Type returnType;
+    std::vector<Parameter> params;
+    SourceLocation location;
+};
+
 struct Module {
+    std::vector<ImportDecl> imports;
+    std::vector<ExternFunctionDecl> externFunctions;
     std::vector<Function> functions;
 };
 

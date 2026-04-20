@@ -25,10 +25,16 @@ private:
     void skipModifiers();
     bool isTypeToken(TokenType type) const;
     std::string parseType();
+    std::string parseImportPath();
+    ImportDecl parseImportDecl();
     FunctionDecl parseFunction();
+    ExternFunctionDecl parseExternFunction();
     std::unique_ptr<BlockStmt> parseBlock();
     std::unique_ptr<Stmt> parseStatement();
     std::unique_ptr<Stmt> parseIfStatement();
+    std::unique_ptr<Stmt> parseWhileStatement();
+    std::unique_ptr<Stmt> parseBreakStatement();
+    std::unique_ptr<Stmt> parseContinueStatement();
     std::unique_ptr<Stmt> parseReturnStatement();
     std::unique_ptr<Stmt> parseVarDeclStatement();
 

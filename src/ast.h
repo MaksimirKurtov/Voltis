@@ -69,7 +69,7 @@ struct ExprStmt : Stmt {
 
 struct ReturnStmt : Stmt {
     std::unique_ptr<Expr> expr;
-    explicit ReturnStmt(std::unique_ptr<Expr> expr, SourceLocation location = {})
+    explicit ReturnStmt(std::unique_ptr<Expr> expr = nullptr, SourceLocation location = {})
         : Stmt(location), expr(std::move(expr)) {}
 };
 
@@ -100,6 +100,20 @@ struct IfStmt : Stmt {
     std::unique_ptr<BlockStmt> elseBlock;
 };
 
+struct WhileStmt : Stmt {
+    explicit WhileStmt(SourceLocation location = {}) : Stmt(location) {}
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<BlockStmt> body;
+};
+
+struct BreakStmt : Stmt {
+    explicit BreakStmt(SourceLocation location = {}) : Stmt(location) {}
+};
+
+struct ContinueStmt : Stmt {
+    explicit ContinueStmt(SourceLocation location = {}) : Stmt(location) {}
+};
+
 struct Param {
     std::string type;
     std::string name;
@@ -114,6 +128,21 @@ struct FunctionDecl {
     SourceLocation location;
 };
 
+struct ImportDecl {
+    std::string path;
+    SourceLocation location;
+};
+
+struct ExternFunctionDecl {
+    std::string name;
+    std::vector<Param> params;
+    std::string returnType;
+    std::string importPath;
+    SourceLocation location;
+};
+
 struct Program {
+    std::vector<ImportDecl> imports;
+    std::vector<ExternFunctionDecl> externFunctions;
     std::vector<FunctionDecl> functions;
 };

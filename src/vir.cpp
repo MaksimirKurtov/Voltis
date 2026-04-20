@@ -159,6 +159,9 @@ void dumpInstruction(std::ostringstream& out, const Instruction& instruction, in
             if (inst.isBuiltin) {
                 out << " [builtin]";
             }
+            if (inst.isExtern) {
+                out << " [extern from \"" << escapeString(inst.importPath) << "\"]";
+            }
             out << "(";
             for (std::size_t i = 0; i < inst.args.size(); ++i) {
                 if (i > 0) {
@@ -222,6 +225,26 @@ std::string toString(Type type) {
 std::string dump(const Module& module) {
     std::ostringstream out;
     out << "module {\n";
+    if (!module.imports.empty()) {
+        out << "  imports:\n";
+        for (const auto& importDecl : module.imports) {
+            out << "    \"" << escapeString(importDecl.path) << "\"\n";
+        }
+    }
+    if (!module.externFunctions.empty()) {
+        out << "  externs:\n";
+        for (const auto& externFunction : module.externFunctions) {
+            out << "    extern fn " << externFunction.name << "(";
+            for (std::size_t i = 0; i < externFunction.params.size(); ++i) {
+                if (i > 0) {
+                    out << ", ";
+                }
+                out << externFunction.params[i].name << ":" << toString(externFunction.params[i].type);
+            }
+            out << ") -> " << toString(externFunction.returnType)
+                << " from \"" << escapeString(externFunction.importPath) << "\"\n";
+        }
+    }
     for (const auto& function : module.functions) {
         out << "  fn " << function.name << "(";
         for (std::size_t i = 0; i < function.params.size(); ++i) {
