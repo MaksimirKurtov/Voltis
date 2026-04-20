@@ -1,0 +1,6 @@
+public fn main() -> int32 {
+    while (false) {
+        print("never");
+    }
+    return 0;
+}

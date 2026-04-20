@@ -13,6 +13,7 @@ source (.vlt)
   -> AST
   -> semantic analysis
   -> VIR lowering
+  -> VIR optimization + verification
   -> backend abstraction
   -> output artifact(s)
 ```
@@ -26,6 +27,7 @@ Responsibilities:
 - preserve semantic typing information
 - represent control flow and operations explicitly
 - provide a backend-agnostic compile boundary
+- support backend-hardening passes (constant-branch simplification, unreachable block pruning, structural verification)
 
 ## 3. Implemented backend targets
 

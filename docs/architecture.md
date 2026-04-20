@@ -13,6 +13,7 @@ Voltis source (.vlt)
   -> AST
   -> Semantic analysis (subset)
   -> Typed VIR lowering
+  -> VIR optimization + verification
   -> Backend abstraction (IBackend)
   -> Direct Windows x64 PE executable output (default path)
   -> LLVM IR text (`--emit-llvm`)
@@ -58,11 +59,12 @@ Voltis source (.vlt)
 
 - VIR data model (`src/vir.*`) with typed values, locals, basic blocks, instructions, terminators
 - lowering from semantic info into VIR (`src/lowering.*`)
+- hardening passes (`src/vir_passes.*`) for constant-condition branch folding, unreachable block removal, and structural verification
 - debug text dump via `--emit-vir`
 
 **Not implemented yet:**
 
-- optimization pass pipeline
+- richer optimization pass pipeline beyond current baseline simplifications
 - broader lowering coverage for full language surface
 - advanced ABI-aware lowering for richer interop/runtime features
 
