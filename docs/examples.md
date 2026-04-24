@@ -39,6 +39,14 @@ Implemented primitive types:
 - `bool`
 - `void`
 
+Frontend-supported composite type forms:
+
+- `StructName`
+- `Type*`
+- `Type&`
+- `Type[N]`
+- `Type[]`
+
 ## Functions
 
 | Syntax | Explanation |
@@ -52,7 +60,10 @@ Implemented primitive types:
 
 | Syntax | Explanation |
 |--------|------------|
+| <pre><code>import "math.vlt";</code></pre> | Import another Voltis source file relative to the current file |
 | <pre><code>import "kernel32.dll";</code></pre> | Import a DLL by string path |
+| <pre><code>import "kernel32.lib";<br>import "libkernel32.a";</code></pre> | Import-library/archive forms accepted by the linker layer |
+| <pre><code>import "kernel32.so";<br>import "kernel32.dylib";</code></pre> | Shared-library style names normalized for PE backend linking |
 | <pre><code>import &lt;kernel32.dll&gt;;</code></pre> | Alternate angle-bracket import form |
 | <pre><code>extern fn GetCurrentProcessId() -&gt; int32 from "kernel32.dll";</code></pre> | Bind an external symbol to an imported DLL |
 | <pre><code>int32 pid = GetCurrentProcessId();</code></pre> | Call an external function like any direct function call |

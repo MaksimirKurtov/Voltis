@@ -1,0 +1,11 @@
+public fn banner() -> void {
+    print("banner");
+    return;
+}
+
+public fn main() -> int32 {
+    banner();
+    print("done");
+    return 0;
+}
+

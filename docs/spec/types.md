@@ -58,12 +58,31 @@ Not implicitly assignable:
 - non-`void` functions must return a value on all required paths
 - `void` functions may use `return;` and must not return a value
 
-## 6. Current boundary
+## 6. Composite and user-defined type surface
+
+The frontend (lexer/parser/sema) accepts these additional type forms:
+
+- named struct types (`Vec2`)
+- pointer suffix (`int32*`)
+- reference suffix (`int32&`)
+- fixed-size array suffix (`int32[4]`)
+- slice suffix (`int32[]`)
+
+Struct declarations are supported at top level:
+
+```voltis
+struct Node {
+    int32 value;
+    int32* next;
+}
+```
+
+## 7. Current boundary
 
 Not yet part of implemented type surface:
 
-- user-defined aggregate types
-- nullable/reference categories
+- full backend/runtime execution semantics for structs, arrays/slices, and pointer/reference operations
+- nullable/reference ownership/lifetime model
 - generics/templates
 
 Design direction remains in [whitepaper](../whitepaper.md) and [roadmap](../../ROADMAP.md).

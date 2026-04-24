@@ -1,0 +1,8 @@
+public fn helperC(int32 seed) -> int32 {
+    return seed * 7;
+}
+
+public fn helperB(int32 seed) -> int32 {
+    return helperC(seed) + 1;
+}
+

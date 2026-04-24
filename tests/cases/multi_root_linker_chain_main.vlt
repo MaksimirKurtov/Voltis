@@ -1,0 +1,10 @@
+public fn chainEntry() -> int32 {
+    return helperB(7);
+}
+
+public fn main() -> int32 {
+    int32 value = chainEntry();
+    print("chain: " + value.ToString());
+    return 0;
+}
+

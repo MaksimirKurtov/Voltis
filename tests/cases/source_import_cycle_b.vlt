@@ -1,0 +1,5 @@
+import "source_import_cycle_a.vlt";
+
+public fn helper() -> int32 {
+    return 42;
+}

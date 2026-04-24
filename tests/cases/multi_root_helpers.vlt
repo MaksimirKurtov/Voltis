@@ -1,0 +1,4 @@
+public fn helper_sum(int32 left, int32 right) -> int32 {
+    return left + right;
+}
+

@@ -93,6 +93,7 @@ Token Lexer::identifierOrKeyword() {
         {"volatile", TokenType::KeywordVolatile},
         {"unsafe", TokenType::KeywordUnsafe},
         {"fn", TokenType::KeywordFn},
+        {"struct", TokenType::KeywordStruct},
         {"if", TokenType::KeywordIf},
         {"else", TokenType::KeywordElse},
         {"while", TokenType::KeywordWhile},
@@ -199,6 +200,8 @@ std::vector<Token> Lexer::tokenize() {
             case ')': tokens.push_back(makeToken(TokenType::RParen, ")", line, column)); break;
             case '{': tokens.push_back(makeToken(TokenType::LBrace, "{", line, column)); break;
             case '}': tokens.push_back(makeToken(TokenType::RBrace, "}", line, column)); break;
+            case '[': tokens.push_back(makeToken(TokenType::LBracket, "[", line, column)); break;
+            case ']': tokens.push_back(makeToken(TokenType::RBracket, "]", line, column)); break;
             case ',': tokens.push_back(makeToken(TokenType::Comma, ",", line, column)); break;
             case ';': tokens.push_back(makeToken(TokenType::Semicolon, ";", line, column)); break;
             case '.': tokens.push_back(makeToken(TokenType::Dot, ".", line, column)); break;
@@ -216,6 +219,9 @@ std::vector<Token> Lexer::tokenize() {
             case '!':
                 if (match('=')) tokens.push_back(makeToken(TokenType::BangEqual, "!=", line, column));
                 else tokens.push_back(makeToken(TokenType::Bang, "!", line, column));
+                break;
+            case '&':
+                tokens.push_back(makeToken(TokenType::Ampersand, "&", line, column));
                 break;
             case '<':
                 if (match('=')) tokens.push_back(makeToken(TokenType::LessEqual, "<=", line, column));

@@ -1,0 +1,7 @@
+import "module_math.vlt";
+
+public fn main() -> int32 {
+    int32 total = add(2, 3);
+    print("sum: " + total.ToString());
+    return 0;
+}

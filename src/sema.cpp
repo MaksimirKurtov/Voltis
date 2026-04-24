@@ -35,6 +35,7 @@ bool isBlankString(std::string_view value) {
 bool SemanticAnalyzer::analyze(Program& program) {
     diagnostics_ = DiagnosticBag{};
     functions_.clear();
+    structs_.clear();
     importedPaths_.clear();
     scopes_.clear();
     expressionTypes_.clear();
@@ -42,6 +43,7 @@ bool SemanticAnalyzer::analyze(Program& program) {
     currentReturnType_ = "void";
     loopDepth_ = 0;
 
+    registerStructs(program);
     registerImports(program);
     registerFunctions(program);
     for (auto& function : program.functions) {
@@ -61,6 +63,31 @@ const std::unordered_map<const Expr*, std::string>& SemanticAnalyzer::expression
 
 const std::unordered_map<const Expr*, SemanticAnalyzer::ConversionInfo>& SemanticAnalyzer::conversionInfos() const {
     return conversionInfos_;
+}
+
+void SemanticAnalyzer::registerStructs(const Program& program) {
+    for (const auto& structDecl : program.structs) {
+        if (isKnownType(structDecl.name) || structs_.find(structDecl.name) != structs_.end()) {
+            diagnostics_.error(structDecl.location, "duplicate type declaration '" + structDecl.name + "'");
+            continue;
+        }
+
+        std::unordered_map<std::string, StructFieldSymbol> fieldMap;
+        for (const auto& field : structDecl.fields) {
+            if (fieldMap.find(field.name) != fieldMap.end()) {
+                diagnostics_.error(field.location, "duplicate struct field '" + field.name + "' in '" + structDecl.name + "'");
+                continue;
+            }
+            if (field.type == "void") {
+                diagnostics_.error(field.location, "struct field '" + field.name + "' cannot use type 'void'");
+            } else if (!isKnownType(field.type)) {
+                diagnostics_.error(field.location, "unknown field type '" + field.type + "' for '" + field.name + "'");
+            }
+            fieldMap.emplace(field.name, StructFieldSymbol{field.type, field.location});
+        }
+
+        structs_.emplace(structDecl.name, std::move(fieldMap));
+    }
 }
 
 void SemanticAnalyzer::registerImports(const Program& program) {
@@ -317,6 +344,19 @@ std::string SemanticAnalyzer::analyzeExpr(Expr* expr) {
                 return makeTypeErrorType(expr, "logical negation requires 'bool', got '" + rightType + "'");
             }
             return setExprType(expr, "bool");
+        }
+        if (unary->op == "&") {
+            if (!dynamic_cast<VariableExpr*>(unary->right.get())) {
+                return makeTypeErrorType(expr, "address-of '&' currently requires a variable operand");
+            }
+            return setExprType(expr, rightType + "*");
+        }
+        if (unary->op == "*") {
+            const auto baseType = baseTypeIfPointer(rightType);
+            if (!baseType.has_value()) {
+                return makeTypeErrorType(expr, "dereference '*' requires pointer operand, got '" + rightType + "'");
+            }
+            return setExprType(expr, *baseType);
         }
         return makeTypeErrorType(expr, "unsupported unary operator '" + unary->op + "'");
     }
@@ -597,8 +637,26 @@ const SemanticAnalyzer::VariableSymbol* SemanticAnalyzer::lookupVariable(const s
 }
 
 bool SemanticAnalyzer::isKnownType(const std::string& type) const {
+    if (type.empty()) {
+        return false;
+    }
+
+    if (auto element = sliceElementType(type)) {
+        return *element != "void" && isKnownType(*element);
+    }
+    if (auto element = arrayElementType(type)) {
+        return *element != "void" && isKnownType(*element);
+    }
+    if (auto base = baseTypeIfPointer(type)) {
+        return isKnownType(*base);
+    }
+    if (auto base = baseTypeIfReference(type)) {
+        return *base != "void" && isKnownType(*base);
+    }
+
     return type == "int32" || type == "float32" || type == "float64" ||
-           type == "string" || type == "bool" || type == "void";
+           type == "string" || type == "bool" || type == "void" ||
+           structs_.find(type) != structs_.end();
 }
 
 bool SemanticAnalyzer::isNumericType(const std::string& type) const {
@@ -618,12 +676,28 @@ bool SemanticAnalyzer::isAssignable(const std::string& target, const std::string
         return true;
     }
 
+    if (const auto targetRef = baseTypeIfReference(target)) {
+        return *targetRef == source;
+    }
+
+    if (const auto sourceRef = baseTypeIfReference(source)) {
+        if (target == *sourceRef) {
+            return true;
+        }
+    }
+
     if (target == "float64" && (source == "float32" || source == "int32")) {
         return true;
     }
 
     if (target == "float32" && source == "int32") {
         return true;
+    }
+
+    if (const auto targetSlice = sliceElementType(target)) {
+        if (const auto sourceArray = arrayElementType(source)) {
+            return *targetSlice == *sourceArray;
+        }
     }
 
     return false;
@@ -692,6 +766,48 @@ std::string SemanticAnalyzer::allowedReceiverTypes(const std::string& method) co
     if (method == "ToBool") return "int32, float32, float64, string, bool";
     if (method == "Round" || method == "Floor" || method == "Ceil") return "float32, float64";
     return "ToString, ToInt32, ToFloat32, ToFloat64, ToBool, Round, Floor, Ceil";
+}
+
+std::optional<std::string> SemanticAnalyzer::baseTypeIfPointer(const std::string& type) const {
+    if (type.size() > 1 && type.back() == '*') {
+        return type.substr(0, type.size() - 1);
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> SemanticAnalyzer::baseTypeIfReference(const std::string& type) const {
+    if (type.size() > 1 && type.back() == '&') {
+        return type.substr(0, type.size() - 1);
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> SemanticAnalyzer::arrayElementType(const std::string& type) const {
+    if (type.size() < 4 || type.back() != ']') {
+        return std::nullopt;
+    }
+    const std::size_t openBracket = type.rfind('[');
+    if (openBracket == std::string::npos || openBracket == 0) {
+        return std::nullopt;
+    }
+    const std::string sizeToken = type.substr(openBracket + 1, type.size() - openBracket - 2);
+    if (sizeToken.empty() || !isDigits(sizeToken)) {
+        return std::nullopt;
+    }
+    return type.substr(0, openBracket);
+}
+
+std::optional<std::string> SemanticAnalyzer::sliceElementType(const std::string& type) const {
+    if (type.size() > 2 && type.substr(type.size() - 2) == "[]") {
+        return type.substr(0, type.size() - 2);
+    }
+    return std::nullopt;
+}
+
+bool SemanticAnalyzer::isDigits(const std::string& value) const {
+    return !value.empty() && std::all_of(value.begin(), value.end(), [](char c) {
+        return std::isdigit(static_cast<unsigned char>(c)) != 0;
+    });
 }
 
 std::string SemanticAnalyzer::setConversionInfo(const Expr* expr, const std::string& resultType, const std::string& sourceType, const std::string& method, ConversionKind kind) {

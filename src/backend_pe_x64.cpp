@@ -1,11 +1,15 @@
 #include "backend_pe_x64.h"
+#include "import_utils.h"
+#include "linker_model.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <limits>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -14,28 +18,14 @@
 
 namespace {
 
-enum class SectionId {
-    Text,
-    Rdata,
-    Idata
-};
-
-enum class FixupKind {
-    Rel32,
-    RipDisp32
-};
+using SectionId = linker::LinkSectionKind;
+using FixupKind = linker::RelocationKind;
+using Fixup = linker::Relocation;
+using LinkSymbolVisibility = linker::LinkSymbolVisibility;
 
 struct Symbol {
     SectionId section = SectionId::Text;
     std::size_t offset = 0;
-};
-
-struct Fixup {
-    SectionId section = SectionId::Text;
-    std::size_t offset = 0;
-    std::string target;
-    std::size_t instructionSize = 0;
-    FixupKind kind = FixupKind::Rel32;
 };
 
 static std::size_t alignTo(std::size_t value, std::size_t alignment) {
@@ -71,6 +61,171 @@ static void patchU64(std::vector<std::uint8_t>& out, std::size_t offset, std::ui
     }
 }
 
+static bool tryReadU16(const std::string& bytes, std::size_t offset, std::uint16_t& out) {
+    if (offset + 2 > bytes.size()) {
+        return false;
+    }
+    out = static_cast<std::uint16_t>(
+        static_cast<std::uint8_t>(bytes[offset]) |
+        (static_cast<std::uint16_t>(static_cast<std::uint8_t>(bytes[offset + 1])) << 8));
+    return true;
+}
+
+static bool tryReadU32(const std::string& bytes, std::size_t offset, std::uint32_t& out) {
+    if (offset + 4 > bytes.size()) {
+        return false;
+    }
+    out = static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[offset])) |
+          (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[offset + 1])) << 8) |
+          (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[offset + 2])) << 16) |
+          (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[offset + 3])) << 24);
+    return true;
+}
+
+struct PeSectionHeaderView {
+    std::string name;
+    std::uint32_t virtualSize = 0;
+    std::uint32_t virtualAddress = 0;
+    std::uint32_t rawSize = 0;
+    std::uint32_t rawPointer = 0;
+};
+
+static bool rvaInSection(std::uint32_t rva, const PeSectionHeaderView& section) {
+    const std::uint64_t sectionStart = section.virtualAddress;
+    const std::uint32_t sectionSpan = std::max(section.virtualSize, section.rawSize);
+    const std::uint64_t sectionEnd = sectionStart + static_cast<std::uint64_t>(sectionSpan == 0 ? 1 : sectionSpan);
+    return static_cast<std::uint64_t>(rva) >= sectionStart && static_cast<std::uint64_t>(rva) < sectionEnd;
+}
+
+static std::optional<std::string> validatePeExecutablePayload(const std::string& payload) {
+    if (payload.size() < 0x40) {
+        return std::string("payload is too small for DOS header");
+    }
+    if (payload[0] != 'M' || payload[1] != 'Z') {
+        return std::string("missing MZ signature");
+    }
+
+    std::uint32_t peOffset = 0;
+    if (!tryReadU32(payload, 0x3C, peOffset)) {
+        return std::string("missing e_lfanew");
+    }
+    if (static_cast<std::uint64_t>(peOffset) + 24 > payload.size()) {
+        return std::string("PE header offset is outside payload bounds");
+    }
+    if (payload[peOffset] != 'P' || payload[peOffset + 1] != 'E' || payload[peOffset + 2] != 0 || payload[peOffset + 3] != 0) {
+        return std::string("missing PE signature");
+    }
+
+    std::uint16_t machine = 0;
+    std::uint16_t sectionCount = 0;
+    std::uint16_t optionalSize = 0;
+    if (!tryReadU16(payload, static_cast<std::size_t>(peOffset) + 4, machine) ||
+        !tryReadU16(payload, static_cast<std::size_t>(peOffset) + 6, sectionCount) ||
+        !tryReadU16(payload, static_cast<std::size_t>(peOffset) + 20, optionalSize)) {
+        return std::string("truncated COFF header");
+    }
+    if (machine != 0x8664) {
+        return std::string("unexpected machine type (expected x64)");
+    }
+    if (sectionCount < 3) {
+        return std::string("expected at least .text/.rdata/.idata sections");
+    }
+
+    const std::size_t optionalOffset = static_cast<std::size_t>(peOffset) + 24;
+    if (optionalOffset + optionalSize > payload.size()) {
+        return std::string("optional header extends past payload bounds");
+    }
+
+    std::uint16_t optionalMagic = 0;
+    std::uint32_t entryRva = 0;
+    std::uint32_t numberOfRvaAndSizes = 0;
+    if (!tryReadU16(payload, optionalOffset + 0, optionalMagic) ||
+        !tryReadU32(payload, optionalOffset + 16, entryRva)) {
+        return std::string("truncated optional header");
+    }
+    if (optionalMagic != 0x20B) {
+        return std::string("unexpected optional header magic (expected PE32+)");
+    }
+    if (optionalSize < 128 ||
+        !tryReadU32(payload, optionalOffset + 108, numberOfRvaAndSizes)) {
+        return std::string("optional header missing data directory table");
+    }
+    if (numberOfRvaAndSizes < 2) {
+        return std::string("optional header has no import directory entry");
+    }
+
+    std::uint32_t importRva = 0;
+    std::uint32_t importSize = 0;
+    if (!tryReadU32(payload, optionalOffset + 120, importRva) ||
+        !tryReadU32(payload, optionalOffset + 124, importSize)) {
+        return std::string("truncated import directory entry");
+    }
+    if (importRva == 0 || importSize == 0) {
+        return std::string("import directory is missing");
+    }
+
+    const std::size_t sectionHeadersOffset = optionalOffset + optionalSize;
+    const std::size_t sectionHeadersSize = static_cast<std::size_t>(sectionCount) * 40;
+    if (sectionHeadersOffset + sectionHeadersSize > payload.size()) {
+        return std::string("section table extends past payload bounds");
+    }
+
+    std::vector<PeSectionHeaderView> sections;
+    sections.reserve(sectionCount);
+    for (std::size_t i = 0; i < sectionCount; ++i) {
+        const std::size_t headerOffset = sectionHeadersOffset + i * 40;
+        PeSectionHeaderView section;
+        for (std::size_t nameIndex = 0; nameIndex < 8; ++nameIndex) {
+            const char ch = payload[headerOffset + nameIndex];
+            if (ch == '\0') {
+                break;
+            }
+            section.name.push_back(ch);
+        }
+        if (!tryReadU32(payload, headerOffset + 8, section.virtualSize) ||
+            !tryReadU32(payload, headerOffset + 12, section.virtualAddress) ||
+            !tryReadU32(payload, headerOffset + 16, section.rawSize) ||
+            !tryReadU32(payload, headerOffset + 20, section.rawPointer)) {
+            return std::string("truncated section header");
+        }
+
+        if (section.rawSize > 0) {
+            const std::uint64_t rawStart = section.rawPointer;
+            const std::uint64_t rawEnd = rawStart + section.rawSize;
+            if (rawEnd > payload.size()) {
+                return "section '" + section.name + "' raw data lies outside payload bounds";
+            }
+        }
+        sections.push_back(std::move(section));
+    }
+
+    const auto findSection = [&](const std::string& name) -> const PeSectionHeaderView* {
+        for (const auto& section : sections) {
+            if (section.name == name) {
+                return &section;
+            }
+        }
+        return nullptr;
+    };
+
+    const PeSectionHeaderView* textSection = findSection(".text");
+    const PeSectionHeaderView* idataSection = findSection(".idata");
+    if (textSection == nullptr) {
+        return std::string("missing .text section");
+    }
+    if (idataSection == nullptr) {
+        return std::string("missing .idata section");
+    }
+    if (!rvaInSection(entryRva, *textSection)) {
+        return std::string("entrypoint RVA is not inside .text");
+    }
+    if (!rvaInSection(importRva, *idataSection)) {
+        return std::string("import directory RVA is not inside .idata");
+    }
+
+    return std::nullopt;
+}
+
 static std::string sanitizeIdentifier(const std::string& name) {
     if (name.empty()) {
         return "unnamed";
@@ -89,22 +244,6 @@ static std::string sanitizeIdentifier(const std::string& name) {
         out.insert(out.begin(), '_');
     }
     return out;
-}
-
-static std::string toLowerAscii(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return value;
-}
-
-static std::string normalizeImportLibraryName(const std::string& path) {
-    if (path.empty()) {
-        return {};
-    }
-    const std::size_t slashPos = path.find_last_of("/\\");
-    const std::string fileName = (slashPos == std::string::npos) ? path : path.substr(slashPos + 1);
-    return toLowerAscii(fileName);
 }
 
 class SectionBuilder {
@@ -166,6 +305,7 @@ public:
 
         const std::string label = "__iat_" + sanitizeIdentifier(dll) + "_" + sanitizeIdentifier(name);
         labels_[key] = label;
+        labelImports_[label] = linker::ImportSymbol{dll, name, label};
         if (dllIndex_.find(dll) == dllIndex_.end()) {
             dllIndex_[dll] = dlls_.size();
             dlls_.push_back(DllLayout{dll});
@@ -216,6 +356,10 @@ public:
         return iatOffsets_;
     }
 
+    const std::unordered_map<std::string, linker::ImportSymbol>& importsByLabel() const {
+        return labelImports_;
+    }
+
     void patch(std::uint32_t idataRva) {
         for (const auto& dll : dlls_) {
             const std::uint32_t originalThunkRva = idataRva + static_cast<std::uint32_t>(dll.intOffset);
@@ -257,6 +401,7 @@ private:
 
     SectionBuilder& idata_;
     std::unordered_map<std::string, std::string> labels_;
+    std::unordered_map<std::string, linker::ImportSymbol> labelImports_;
     std::unordered_map<std::string, std::size_t> dllIndex_;
     std::unordered_map<std::string, std::size_t> iatOffsets_;
     std::vector<DllLayout> dlls_;
@@ -538,15 +683,54 @@ struct FunctionFrame {
 
 class PeImage {
 public:
-    PeImage() : imports_(idata_) {}
+    explicit PeImage(std::string objectName) : imports_(idata_) {
+        linkObject_.name = std::move(objectName);
+    }
 
     SectionBuilder& text() { return text_; }
     SectionBuilder& rdata() { return rdata_; }
     SectionBuilder& idata() { return idata_; }
     ImportTableBuilder& imports() { return imports_; }
 
-    void defineSymbol(const std::string& name, SectionId section, std::size_t offset) {
+    void defineSymbol(const std::string& name,
+                      SectionId section,
+                      std::size_t offset,
+                      LinkSymbolVisibility visibility = LinkSymbolVisibility::Local,
+                      bool isImport = false,
+                      const std::string& importDll = {},
+                      const std::string& importName = {}) {
         symbols_[name] = Symbol{section, offset};
+        auto existing = linkSymbolIndexByName_.find(name);
+        if (existing == linkSymbolIndexByName_.end()) {
+            linker::LinkSymbol symbol;
+            symbol.name = name;
+            symbol.section = section;
+            symbol.offset = offset;
+            symbol.visibility = visibility;
+            symbol.isDefined = true;
+            symbol.isImport = isImport;
+            symbol.objectName = linkObject_.name;
+            symbol.importDll = importDll;
+            symbol.importName = importName;
+            linkObject_.symbols.push_back(std::move(symbol));
+            linkSymbolIndexByName_[name] = linkObject_.symbols.size() - 1;
+        } else {
+            linker::LinkSymbol& symbol = linkObject_.symbols[existing->second];
+            symbol.section = section;
+            symbol.offset = offset;
+            symbol.visibility = visibility;
+            symbol.isDefined = true;
+            symbol.isImport = isImport;
+            symbol.objectName = linkObject_.name;
+            if (isImport) {
+                symbol.importDll = importDll;
+                symbol.importName = importName;
+            }
+        }
+    }
+
+    void defineGlobalSymbol(const std::string& name, SectionId section, std::size_t offset) {
+        defineSymbol(name, section, offset, LinkSymbolVisibility::Global);
     }
 
     const Symbol& symbol(const std::string& name) const {
@@ -561,46 +745,45 @@ public:
         const std::string label = "__lit_" + std::to_string(stringLabels_.size());
         const std::size_t offset = rdata_.appendCString(value);
         rdata_.defineLabel(label);
-        defineSymbol(label, SectionId::Rdata, offset);
+        defineSymbol(label, SectionId::Rdata, offset, LinkSymbolVisibility::Local);
         stringLabels_[value] = label;
         return label;
     }
 
     void addFixup(SectionId section, std::size_t offset, const std::string& target, std::size_t instructionSize, FixupKind kind) {
-        fixups_.push_back(Fixup{section, offset, target, instructionSize, kind});
+        linker::Relocation relocation;
+        relocation.section = section;
+        relocation.offset = offset;
+        relocation.target = target;
+        relocation.instructionSize = instructionSize;
+        relocation.kind = kind;
+        relocation.sourceObjectName = linkObject_.name;
+        relocation.sourceObjectIndex = 0;
+        relocation.addend = 0;
+        linkObject_.relocations.push_back(std::move(relocation));
     }
 
-    void finalizeImports() {
-        imports_.emit();
-        for (const auto& [label, offset] : imports_.iatOffsets()) {
-            defineSymbol(label, SectionId::Idata, offset);
+    std::vector<Fixup>& fixups() { return linkObject_.relocations; }
+    const linker::LinkObject& linkObject() const { return linkObject_; }
+    const linker::LinkedImage& linkedImage() const { return linkedImage_; }
+
+    bool buildImage(DiagnosticBag& diagnostics, std::string& payload, std::uint32_t& entryOffsetOut) {
+        if (!finalizeImports(diagnostics)) {
+            return false;
         }
-    }
 
-    std::string writeBinary(std::uint32_t entryOffset) {
-        finalizeImports();
+        std::vector<linker::LinkObject> objects = splitIntoLinkObjects();
+        std::vector<std::uint8_t> textBytes;
+        std::vector<std::uint8_t> rdataBytes;
+        std::vector<std::uint8_t> idataBytes;
+        std::vector<std::uint8_t> relocBytes;
+        if (!linkObjects(objects, diagnostics, textBytes, rdataBytes, idataBytes, relocBytes)) {
+            return false;
+        }
 
-        const std::size_t fileAlignment = 0x200;
-        const std::size_t sectionAlignment = 0x1000;
-        const std::size_t headersSize = alignTo(0x80 + 4 + 20 + 240 + 3 * 40, fileAlignment);
-
-        const std::size_t textRawSize = alignTo(text_.size(), fileAlignment);
-        const std::size_t rdataRawSize = alignTo(rdata_.size(), fileAlignment);
-        const std::size_t idataRawSize = alignTo(idata_.size(), fileAlignment);
-
-        const std::uint32_t textRva = static_cast<std::uint32_t>(alignTo(headersSize, sectionAlignment));
-        const std::uint32_t rdataRva = static_cast<std::uint32_t>(alignTo(textRva + static_cast<std::uint32_t>(alignTo(text_.size(), sectionAlignment)), sectionAlignment));
-        const std::uint32_t idataRva = static_cast<std::uint32_t>(alignTo(rdataRva + static_cast<std::uint32_t>(alignTo(rdata_.size(), sectionAlignment)), sectionAlignment));
-
-        patchImports(idataRva);
-        patchCodeFixups(textRva, rdataRva, idataRva);
-
-        const std::uint32_t textRaw = static_cast<std::uint32_t>(headersSize);
-        const std::uint32_t rdataRaw = textRaw + static_cast<std::uint32_t>(textRawSize);
-        const std::uint32_t idataRaw = rdataRaw + static_cast<std::uint32_t>(rdataRawSize);
-        const std::size_t imageSize = alignTo(idataRva + alignTo(idata_.size(), sectionAlignment), sectionAlignment);
-        const std::uint32_t importDirectoryRva = idataRva;
-        const std::uint32_t importDirectorySize = static_cast<std::uint32_t>(idata_.size());
+        const std::size_t sectionCount = linkedImage_.sections.size();
+        const std::size_t headersSize = alignTo(0x80 + 4 + 20 + 240 + sectionCount * 40, linkedImage_.fileAlignment);
+        linkedImage_.headersSize = static_cast<std::uint32_t>(headersSize);
 
         std::vector<std::uint8_t> header;
         header.reserve(headersSize);
@@ -613,7 +796,7 @@ public:
         header.push_back(0);
         header.push_back(0);
         appendU16(header, 0x8664);
-        appendU16(header, 3);
+        appendU16(header, static_cast<std::uint16_t>(sectionCount));
         appendU32(header, 0);
         appendU32(header, 0);
         appendU32(header, 0);
@@ -626,11 +809,11 @@ public:
         appendU32(header, 0);
         appendU32(header, 0);
         appendU32(header, 0);
-        appendU32(header, textRva + entryOffset);
-        appendU32(header, textRva);
-        appendU64(header, 0x0000000140000000ULL);
-        appendU32(header, 0x1000);
-        appendU32(header, 0x200);
+        appendU32(header, linkedImage_.entryPointRva);
+        appendU32(header, linkedImage_.sections.empty() ? 0 : linkedImage_.sections.front().rva);
+        appendU64(header, linkedImage_.imageBase);
+        appendU32(header, linkedImage_.sectionAlignment);
+        appendU32(header, linkedImage_.fileAlignment);
         appendU16(header, 6);
         appendU16(header, 0);
         appendU16(header, 6);
@@ -638,8 +821,8 @@ public:
         appendU16(header, 6);
         appendU16(header, 0);
         appendU32(header, 0);
-        appendU32(header, static_cast<std::uint32_t>(imageSize));
-        appendU32(header, static_cast<std::uint32_t>(headersSize));
+        appendU32(header, linkedImage_.sizeOfImage);
+        appendU32(header, linkedImage_.headersSize);
         appendU32(header, 0);
         appendU16(header, 3);
         appendU16(header, 0x0100);
@@ -651,68 +834,612 @@ public:
         appendU32(header, 16);
         appendU32(header, 0);
         appendU32(header, 0);
-        appendU32(header, importDirectoryRva);
-        appendU32(header, importDirectorySize);
-        for (int i = 2; i < 16; ++i) {
+        appendU32(header, linkedImage_.importDirectoryRva);
+        appendU32(header, linkedImage_.importDirectorySize);
+        appendU32(header, 0);
+        appendU32(header, 0);
+        appendU32(header, 0);
+        appendU32(header, 0);
+        appendU32(header, 0);
+        appendU32(header, 0);
+        appendU32(header, linkedImage_.baseRelocDirectoryRva);
+        appendU32(header, linkedImage_.baseRelocDirectorySize);
+        for (int i = 6; i < 12; ++i) {
+            appendU32(header, 0);
+            appendU32(header, 0);
+        }
+        appendU32(header, linkedImage_.iatDirectoryRva);
+        appendU32(header, linkedImage_.iatDirectorySize);
+        for (int i = 13; i < 16; ++i) {
             appendU32(header, 0);
             appendU32(header, 0);
         }
 
-        auto appendSectionHeader = [&](const char* name, std::uint32_t virtualSize, std::uint32_t virtualAddress,
-                                       std::uint32_t rawSize, std::uint32_t rawPointer, std::uint32_t characteristics) {
+        auto appendSectionHeader = [&](const linker::LinkSection& section) {
             char secName[8]{};
-            std::memcpy(secName, name, std::min<std::size_t>(7, std::strlen(name)));
+            std::memcpy(secName, section.name.c_str(), std::min<std::size_t>(7, section.name.size()));
             header.insert(header.end(), secName, secName + 8);
-            appendU32(header, virtualSize);
-            appendU32(header, virtualAddress);
-            appendU32(header, rawSize);
-            appendU32(header, rawPointer);
+            appendU32(header, section.virtualSize);
+            appendU32(header, section.rva);
+            appendU32(header, section.rawSize);
+            appendU32(header, section.rawOffset);
             appendU32(header, 0);
             appendU32(header, 0);
             appendU16(header, 0);
             appendU16(header, 0);
-            appendU32(header, characteristics);
+            appendU32(header, section.characteristics);
         };
-
-        appendSectionHeader(".text", static_cast<std::uint32_t>(text_.size()), textRva, static_cast<std::uint32_t>(textRawSize), textRaw, 0x60000020);
-        appendSectionHeader(".rdata", static_cast<std::uint32_t>(rdata_.size()), rdataRva, static_cast<std::uint32_t>(rdataRawSize), rdataRaw, 0x40000040);
-        appendSectionHeader(".idata", static_cast<std::uint32_t>(idata_.size()), idataRva, static_cast<std::uint32_t>(idataRawSize), idataRaw, 0xC0000040);
+        for (const auto& section : linkedImage_.sections) {
+            appendSectionHeader(section);
+        }
         header.resize(headersSize, 0);
 
         std::vector<std::uint8_t> binary;
-        binary.reserve(headersSize + textRawSize + rdataRawSize + idataRawSize);
+        binary.reserve(headersSize +
+                       alignTo(textBytes.size(), linkedImage_.fileAlignment) +
+                       alignTo(rdataBytes.size(), linkedImage_.fileAlignment) +
+                       alignTo(idataBytes.size(), linkedImage_.fileAlignment) +
+                       alignTo(relocBytes.size(), linkedImage_.fileAlignment));
         binary.insert(binary.end(), header.begin(), header.end());
-        appendPadded(binary, text_.bytes(), textRawSize);
-        appendPadded(binary, rdata_.bytes(), rdataRawSize);
-        appendPadded(binary, idata_.bytes(), idataRawSize);
-        return std::string(reinterpret_cast<const char*>(binary.data()), binary.size());
+        appendPadded(binary, textBytes, alignTo(textBytes.size(), linkedImage_.fileAlignment));
+        appendPadded(binary, rdataBytes, alignTo(rdataBytes.size(), linkedImage_.fileAlignment));
+        appendPadded(binary, idataBytes, alignTo(idataBytes.size(), linkedImage_.fileAlignment));
+        if (!relocBytes.empty()) {
+            appendPadded(binary, relocBytes, alignTo(relocBytes.size(), linkedImage_.fileAlignment));
+        }
+
+        auto entryIt = linkedImage_.symbolRvas.find("__voltis_entry");
+        if (entryIt == linkedImage_.symbolRvas.end()) {
+            diagnostics.error({}, "direct pe backend linker: missing resolved entry symbol '__voltis_entry'");
+            return false;
+        }
+        entryOffsetOut = entryIt->second - linkedImage_.sections.front().rva;
+        payload.assign(reinterpret_cast<const char*>(binary.data()), binary.size());
+        return true;
     }
 
-    std::vector<Fixup>& fixups() { return fixups_; }
-
 private:
+    struct SectionContribution {
+        std::size_t objectIndex = 0;
+        SectionId kind = SectionId::Text;
+        std::size_t baseOffset = 0;
+        std::size_t size = 0;
+    };
+
+    struct ResolvedSymbol {
+        std::string name;
+        SectionId section = SectionId::Text;
+        std::size_t offset = 0;
+        std::string objectName;
+        bool isImport = false;
+        std::string importDll;
+        std::string importName;
+    };
+
+    struct RelocationJob {
+        SectionId sourceSection = SectionId::Text;
+        std::size_t sourceOffset = 0;
+        FixupKind kind = FixupKind::Rel32;
+        std::int64_t addend = 0;
+        std::string sourceObjectName;
+        ResolvedSymbol target;
+    };
+
+    static std::string sectionName(SectionId kind) {
+        switch (kind) {
+            case SectionId::Text: return ".text";
+            case SectionId::Rdata: return ".rdata";
+            case SectionId::Data: return ".data";
+            case SectionId::Idata: return ".idata";
+            case SectionId::Reloc: return ".reloc";
+        }
+        return ".unknown";
+    }
+
+    static std::string relocationName(FixupKind kind) {
+        switch (kind) {
+            case FixupKind::Rel32: return "REL32";
+            case FixupKind::RipDisp32: return "RIP_DISP32";
+            case FixupKind::Dir64: return "DIR64";
+        }
+        return "UNKNOWN";
+    }
+
     static void appendPadded(std::vector<std::uint8_t>& out, const std::vector<std::uint8_t>& bytes, std::size_t rawSize) {
         out.insert(out.end(), bytes.begin(), bytes.end());
         out.resize(out.size() + (rawSize - bytes.size()), 0);
     }
 
-    void patchImports(std::uint32_t idataRva) {
-        imports_.patch(idataRva);
-    }
-
-    void patchCodeFixups(std::uint32_t textRva, std::uint32_t rdataRva, std::uint32_t idataRva) {
-        for (const auto& fixup : fixups_) {
-            const Symbol& sym = symbol(fixup.target);
-            const std::uint32_t targetRva = (sym.section == SectionId::Text ? textRva : sym.section == SectionId::Rdata ? rdataRva : idataRva) +
-                                            static_cast<std::uint32_t>(sym.offset);
-            const std::uint32_t sectionRva = (fixup.section == SectionId::Text ? textRva : fixup.section == SectionId::Rdata ? rdataRva : idataRva);
-            const std::uint32_t siteRva = sectionRva + static_cast<std::uint32_t>(fixup.offset);
-            const std::uint32_t nextRva = siteRva + 4;
-            const std::uint32_t disp = static_cast<std::uint32_t>(static_cast<std::int64_t>(targetRva) - static_cast<std::int64_t>(nextRva));
-            if (fixup.section == SectionId::Text) {
-                patchU32(text_.bytes(), fixup.offset, disp);
+    bool finalizeImports(DiagnosticBag&) {
+        if (importsFinalized_) {
+            return true;
+        }
+        imports_.emit();
+        iatOffsetsSnapshot_ = imports_.iatOffsets();
+        linkObject_.imports.clear();
+        for (const auto& [label, importSymbol] : imports_.importsByLabel()) {
+            linkObject_.imports.push_back(importSymbol);
+        }
+        for (const auto& [label, offset] : imports_.iatOffsets()) {
+            const auto importIt = imports_.importsByLabel().find(label);
+            if (importIt != imports_.importsByLabel().end()) {
+                defineSymbol(label, SectionId::Idata, offset, LinkSymbolVisibility::ExternalImport, true,
+                             importIt->second.dll, importIt->second.name);
+            } else {
+                defineSymbol(label, SectionId::Idata, offset, LinkSymbolVisibility::ExternalImport, true);
             }
         }
+        importsFinalized_ = true;
+        return true;
+    }
+
+    std::vector<linker::LinkObject> splitIntoLinkObjects() const {
+        std::vector<linker::LinkObject> objects;
+        const auto& textBytes = text_.bytes();
+        const auto& rdataBytes = rdata_.bytes();
+        const auto& idataBytes = idata_.bytes();
+
+        struct RangeStart {
+            std::string name;
+            std::size_t offset = 0;
+        };
+        std::vector<RangeStart> globalTextStarts;
+        for (const auto& symbol : linkObject_.symbols) {
+            if (symbol.section == SectionId::Text &&
+                symbol.isDefined &&
+                symbol.visibility == LinkSymbolVisibility::Global) {
+                globalTextStarts.push_back(RangeStart{symbol.name, symbol.offset});
+            }
+        }
+        std::sort(globalTextStarts.begin(), globalTextStarts.end(), [](const RangeStart& a, const RangeStart& b) {
+            return a.offset < b.offset;
+        });
+        globalTextStarts.erase(
+            std::unique(globalTextStarts.begin(), globalTextStarts.end(), [](const RangeStart& a, const RangeStart& b) {
+                return a.offset == b.offset && a.name == b.name;
+            }),
+            globalTextStarts.end());
+
+        auto emitTextObject = [&](const std::string& objectName, std::size_t start, std::size_t end) {
+            linker::LinkObject object;
+            object.name = objectName;
+            if (end < start) {
+                end = start;
+            }
+            end = std::min(end, textBytes.size());
+            start = std::min(start, end);
+            object.sections.push_back(linker::LinkSection{
+                ".text",
+                SectionId::Text,
+                0x60000020,
+                0x1000,
+                std::vector<std::uint8_t>(textBytes.begin() + static_cast<std::ptrdiff_t>(start),
+                                          textBytes.begin() + static_cast<std::ptrdiff_t>(end)),
+                0,
+                0,
+                static_cast<std::uint32_t>(end - start),
+                0
+            });
+
+            for (const auto& symbol : linkObject_.symbols) {
+                if (symbol.section != SectionId::Text || symbol.offset < start || symbol.offset >= end) {
+                    continue;
+                }
+                linker::LinkSymbol adjusted = symbol;
+                adjusted.offset -= start;
+                adjusted.objectName = object.name;
+                object.symbols.push_back(std::move(adjusted));
+            }
+            for (const auto& relocation : linkObject_.relocations) {
+                if (relocation.section != SectionId::Text || relocation.offset < start || relocation.offset >= end) {
+                    continue;
+                }
+                linker::Relocation adjusted = relocation;
+                adjusted.offset -= start;
+                adjusted.sourceObjectName = object.name;
+                object.relocations.push_back(std::move(adjusted));
+            }
+            objects.push_back(std::move(object));
+        };
+
+        if (!globalTextStarts.empty()) {
+            for (std::size_t i = 0; i < globalTextStarts.size(); ++i) {
+                const std::size_t start = globalTextStarts[i].offset;
+                const std::size_t end = (i + 1 < globalTextStarts.size()) ? globalTextStarts[i + 1].offset : textBytes.size();
+                emitTextObject(globalTextStarts[i].name + ".obj", start, end);
+            }
+        } else {
+            emitTextObject(linkObject_.name + ".text.obj", 0, textBytes.size());
+        }
+
+        linker::LinkObject rdataObject;
+        rdataObject.name = linkObject_.name + ".rdata.obj";
+        rdataObject.sections.push_back(linker::LinkSection{
+            ".rdata", SectionId::Rdata, 0x40000040, 0x1000, rdataBytes, 0, 0, static_cast<std::uint32_t>(rdataBytes.size()), 0
+        });
+        for (const auto& symbol : linkObject_.symbols) {
+            if (symbol.section == SectionId::Rdata) {
+                linker::LinkSymbol adjusted = symbol;
+                adjusted.objectName = rdataObject.name;
+                rdataObject.symbols.push_back(std::move(adjusted));
+            }
+        }
+        for (const auto& relocation : linkObject_.relocations) {
+            if (relocation.section == SectionId::Rdata) {
+                linker::Relocation adjusted = relocation;
+                adjusted.sourceObjectName = rdataObject.name;
+                rdataObject.relocations.push_back(std::move(adjusted));
+            }
+        }
+        objects.push_back(std::move(rdataObject));
+
+        linker::LinkObject idataObject;
+        idataObject.name = linkObject_.name + ".idata.obj";
+        idataObject.sections.push_back(linker::LinkSection{
+            ".idata", SectionId::Idata, 0xC0000040, 0x1000, idataBytes, 0, 0, static_cast<std::uint32_t>(idataBytes.size()), 0
+        });
+        for (const auto& symbol : linkObject_.symbols) {
+            if (symbol.section == SectionId::Idata) {
+                linker::LinkSymbol adjusted = symbol;
+                adjusted.objectName = idataObject.name;
+                idataObject.symbols.push_back(std::move(adjusted));
+            }
+        }
+        for (const auto& relocation : linkObject_.relocations) {
+            if (relocation.section == SectionId::Idata) {
+                linker::Relocation adjusted = relocation;
+                adjusted.sourceObjectName = idataObject.name;
+                idataObject.relocations.push_back(std::move(adjusted));
+            }
+        }
+        idataObject.imports = linkObject_.imports;
+        objects.push_back(std::move(idataObject));
+        return objects;
+    }
+
+    bool linkObjects(const std::vector<linker::LinkObject>& objects,
+                     DiagnosticBag& diagnostics,
+                     std::vector<std::uint8_t>& textBytes,
+                     std::vector<std::uint8_t>& rdataBytes,
+                     std::vector<std::uint8_t>& idataBytes,
+                     std::vector<std::uint8_t>& relocBytes) {
+        textBytes.clear();
+        rdataBytes.clear();
+        idataBytes.clear();
+        relocBytes.clear();
+
+        std::vector<SectionContribution> contributions;
+        contributions.reserve(objects.size() * 2);
+        auto appendSectionBytes = [&](SectionId kind, const std::vector<std::uint8_t>& bytes) -> std::size_t {
+            std::vector<std::uint8_t>* out = nullptr;
+            switch (kind) {
+                case SectionId::Text: out = &textBytes; break;
+                case SectionId::Rdata: out = &rdataBytes; break;
+                case SectionId::Idata: out = &idataBytes; break;
+                case SectionId::Data:
+                case SectionId::Reloc:
+                    out = &rdataBytes; // stage-2/3 model: data-like sections share rdata backing for now
+                    break;
+            }
+            const std::size_t base = out->size();
+            out->insert(out->end(), bytes.begin(), bytes.end());
+            return base;
+        };
+
+        for (std::size_t objectIndex = 0; objectIndex < objects.size(); ++objectIndex) {
+            const auto& object = objects[objectIndex];
+            for (const auto& section : object.sections) {
+                const std::size_t baseOffset = appendSectionBytes(section.kind, section.bytes);
+                contributions.push_back(SectionContribution{objectIndex, section.kind, baseOffset, section.bytes.size()});
+            }
+        }
+
+        auto findContribution = [&](std::size_t objectIndex, SectionId kind) -> const SectionContribution* {
+            for (const auto& contribution : contributions) {
+                if (contribution.objectIndex == objectIndex && contribution.kind == kind) {
+                    return &contribution;
+                }
+            }
+            return nullptr;
+        };
+
+        std::unordered_map<std::string, ResolvedSymbol> globals;
+        std::unordered_map<std::string, ResolvedSymbol> locals;
+        std::unordered_map<std::string, std::vector<ResolvedSymbol>> allSymbolsByName;
+        auto localKey = [](std::size_t objectIndex, const std::string& symbolName) {
+            return std::to_string(objectIndex) + "|" + symbolName;
+        };
+
+        for (std::size_t objectIndex = 0; objectIndex < objects.size(); ++objectIndex) {
+            const auto& object = objects[objectIndex];
+            for (const auto& symbol : object.symbols) {
+                if (!symbol.isDefined) {
+                    continue;
+                }
+                const SectionContribution* contribution = findContribution(objectIndex, symbol.section);
+                if (contribution == nullptr) {
+                    diagnostics.error({}, "direct pe backend linker: symbol '" + symbol.name + "' in object '" + object.name +
+                        "' references missing section " + sectionName(symbol.section));
+                    return false;
+                }
+                if (symbol.offset > contribution->size) {
+                    diagnostics.error({}, "direct pe backend linker: symbol '" + symbol.name + "' in object '" + object.name +
+                        "' has out-of-range section offset");
+                    return false;
+                }
+                ResolvedSymbol resolved;
+                resolved.name = symbol.name;
+                resolved.section = symbol.section;
+                resolved.offset = contribution->baseOffset + symbol.offset;
+                resolved.objectName = object.name;
+                resolved.isImport = symbol.isImport;
+                resolved.importDll = symbol.importDll;
+                resolved.importName = symbol.importName;
+                allSymbolsByName[symbol.name].push_back(resolved);
+
+                if (symbol.visibility == LinkSymbolVisibility::Local) {
+                    const std::string key = localKey(objectIndex, symbol.name);
+                    if (locals.find(key) != locals.end()) {
+                        diagnostics.error({}, "direct pe backend linker: duplicate local symbol '" + symbol.name +
+                            "' in object '" + object.name + "'");
+                        return false;
+                    }
+                    locals.emplace(key, std::move(resolved));
+                    continue;
+                }
+
+                const auto existing = globals.find(symbol.name);
+                if (existing != globals.end()) {
+                    const bool bothImports = existing->second.isImport && resolved.isImport &&
+                                             existing->second.importDll == resolved.importDll &&
+                                             existing->second.importName == resolved.importName;
+                    if (!bothImports) {
+                        diagnostics.error({}, "direct pe backend linker: duplicate symbol '" + symbol.name +
+                            "' defined in objects '" + existing->second.objectName + "' and '" + object.name + "'");
+                        return false;
+                    }
+                    continue;
+                }
+                globals.emplace(symbol.name, std::move(resolved));
+            }
+        }
+
+        std::vector<RelocationJob> relocationJobs;
+        relocationJobs.reserve(linkObject_.relocations.size());
+        for (std::size_t objectIndex = 0; objectIndex < objects.size(); ++objectIndex) {
+            const auto& object = objects[objectIndex];
+            for (const auto& relocation : object.relocations) {
+                const SectionContribution* sourceContribution = findContribution(objectIndex, relocation.section);
+                if (sourceContribution == nullptr) {
+                    diagnostics.error({}, "direct pe backend linker: relocation in object '" + object.name +
+                        "' references missing source section " + sectionName(relocation.section));
+                    return false;
+                }
+                if (relocation.offset + (relocation.kind == FixupKind::Dir64 ? 8u : 4u) > sourceContribution->size) {
+                    diagnostics.error({}, "direct pe backend linker: relocation in object '" + object.name +
+                        "' at " + sectionName(relocation.section) + "+" + std::to_string(relocation.offset) +
+                        " exceeds section bounds");
+                    return false;
+                }
+
+                ResolvedSymbol target;
+                const auto localIt = locals.find(localKey(objectIndex, relocation.target));
+                if (localIt != locals.end()) {
+                    target = localIt->second;
+                } else {
+                    const auto globalIt = globals.find(relocation.target);
+                    if (globalIt != globals.end()) {
+                        target = globalIt->second;
+                    } else {
+                        const auto anyIt = allSymbolsByName.find(relocation.target);
+                        if (anyIt == allSymbolsByName.end() || anyIt->second.empty()) {
+                            diagnostics.error({}, "direct pe backend linker: undefined symbol '" + relocation.target +
+                                "' referenced from object '" + object.name + "' at " +
+                                sectionName(relocation.section) + "+" + std::to_string(relocation.offset));
+                            return false;
+                        }
+                        if (anyIt->second.size() > 1) {
+                            diagnostics.error({}, "direct pe backend linker: ambiguous non-exported symbol '" + relocation.target +
+                                "' referenced from object '" + object.name + "'");
+                            return false;
+                        }
+                        target = anyIt->second.front();
+                    }
+                }
+
+                RelocationJob job;
+                job.sourceSection = relocation.section;
+                job.sourceOffset = sourceContribution->baseOffset + relocation.offset;
+                job.kind = relocation.kind;
+                job.addend = relocation.addend;
+                job.sourceObjectName = object.name;
+                job.target = std::move(target);
+                relocationJobs.push_back(std::move(job));
+            }
+        }
+        
+        const bool needsRelocSection = std::any_of(relocationJobs.begin(), relocationJobs.end(), [](const RelocationJob& job) {
+            return job.kind == FixupKind::Dir64;
+        });
+
+        linkedImage_.imageBase = 0x0000000140000000ULL;
+        linkedImage_.sectionAlignment = 0x1000;
+        linkedImage_.fileAlignment = 0x200;
+        const std::size_t sectionCount = needsRelocSection ? 4 : 3;
+        linkedImage_.headersSize = static_cast<std::uint32_t>(
+            alignTo(0x80 + 4 + 20 + 240 + sectionCount * 40, linkedImage_.fileAlignment));
+
+        const std::uint32_t textRva = static_cast<std::uint32_t>(alignTo(linkedImage_.headersSize, linkedImage_.sectionAlignment));
+        const std::uint32_t rdataRva = static_cast<std::uint32_t>(alignTo(
+            static_cast<std::size_t>(textRva) + alignTo(textBytes.size(), linkedImage_.sectionAlignment),
+            linkedImage_.sectionAlignment));
+        const std::uint32_t idataRva = static_cast<std::uint32_t>(alignTo(
+            static_cast<std::size_t>(rdataRva) + alignTo(rdataBytes.size(), linkedImage_.sectionAlignment),
+            linkedImage_.sectionAlignment));
+        const std::uint32_t relocRva = needsRelocSection
+            ? static_cast<std::uint32_t>(alignTo(
+                static_cast<std::size_t>(idataRva) + alignTo(idataBytes.size(), linkedImage_.sectionAlignment),
+                linkedImage_.sectionAlignment))
+            : 0;
+
+        imports_.patch(idataRva);
+        idataBytes = idata_.bytes();
+
+        auto sectionRva = [&](SectionId section) -> std::uint32_t {
+            switch (section) {
+                case SectionId::Text: return textRva;
+                case SectionId::Rdata: return rdataRva;
+                case SectionId::Idata: return idataRva;
+                case SectionId::Reloc: return relocRva;
+                case SectionId::Data: return rdataRva;
+            }
+            return 0;
+        };
+
+        auto sectionBytes = [&](SectionId section) -> std::vector<std::uint8_t>& {
+            switch (section) {
+                case SectionId::Text: return textBytes;
+                case SectionId::Rdata: return rdataBytes;
+                case SectionId::Idata: return idataBytes;
+                case SectionId::Reloc: return relocBytes;
+                case SectionId::Data: return rdataBytes;
+            }
+            return textBytes;
+        };
+
+        std::vector<std::uint32_t> baseRelocRvas;
+        for (const auto& relocation : relocationJobs) {
+            std::vector<std::uint8_t>& sourceBytes = sectionBytes(relocation.sourceSection);
+            if (relocation.sourceOffset + (relocation.kind == FixupKind::Dir64 ? 8u : 4u) > sourceBytes.size()) {
+                diagnostics.error({}, "direct pe backend linker: relocation source out of range for object '" +
+                    relocation.sourceObjectName + "' at " + sectionName(relocation.sourceSection) + "+" +
+                    std::to_string(relocation.sourceOffset));
+                return false;
+            }
+
+            const std::int64_t rawTargetRva =
+                static_cast<std::int64_t>(sectionRva(relocation.target.section)) +
+                static_cast<std::int64_t>(relocation.target.offset) +
+                relocation.addend;
+            if (rawTargetRva < 0) {
+                diagnostics.error({}, "direct pe backend linker: relocation produced negative target RVA for symbol '" +
+                    relocation.target.name + "'");
+                return false;
+            }
+            const std::uint32_t targetRva = static_cast<std::uint32_t>(rawTargetRva);
+
+            if (relocation.kind == FixupKind::Dir64) {
+                const std::uint64_t absoluteValue = linkedImage_.imageBase + static_cast<std::uint64_t>(targetRva);
+                patchU64(sourceBytes, relocation.sourceOffset, absoluteValue);
+                baseRelocRvas.push_back(sectionRva(relocation.sourceSection) + static_cast<std::uint32_t>(relocation.sourceOffset));
+                continue;
+            }
+
+            const std::uint32_t sourceRva = sectionRva(relocation.sourceSection) + static_cast<std::uint32_t>(relocation.sourceOffset);
+            const std::int64_t disp = static_cast<std::int64_t>(targetRva) - static_cast<std::int64_t>(sourceRva + 4u);
+            if (disp < std::numeric_limits<std::int32_t>::min() || disp > std::numeric_limits<std::int32_t>::max()) {
+                diagnostics.error({}, "direct pe backend linker: relocation overflow (" + relocationName(relocation.kind) +
+                    ") in object '" + relocation.sourceObjectName + "' at " +
+                    sectionName(relocation.sourceSection) + "+" + std::to_string(relocation.sourceOffset) +
+                    " targeting '" + relocation.target.name + "'");
+                return false;
+            }
+            patchU32(sourceBytes, relocation.sourceOffset, static_cast<std::uint32_t>(static_cast<std::int32_t>(disp)));
+        }
+
+        if (!baseRelocRvas.empty()) {
+            std::sort(baseRelocRvas.begin(), baseRelocRvas.end());
+            baseRelocRvas.erase(std::unique(baseRelocRvas.begin(), baseRelocRvas.end()), baseRelocRvas.end());
+
+            std::size_t i = 0;
+            while (i < baseRelocRvas.size()) {
+                const std::uint32_t pageRva = baseRelocRvas[i] & 0xFFFFF000u;
+                std::vector<std::uint16_t> entries;
+                while (i < baseRelocRvas.size() && (baseRelocRvas[i] & 0xFFFFF000u) == pageRva) {
+                    const std::uint16_t offset = static_cast<std::uint16_t>(baseRelocRvas[i] & 0x0FFFu);
+                    entries.push_back(static_cast<std::uint16_t>((10u << 12) | offset)); // IMAGE_REL_BASED_DIR64
+                    ++i;
+                }
+
+                std::size_t blockSize = 8 + entries.size() * 2;
+                if ((blockSize % 4) != 0) {
+                    entries.push_back(0); // IMAGE_REL_BASED_ABSOLUTE padding
+                    blockSize += 2;
+                }
+
+                appendU32(relocBytes, pageRva);
+                appendU32(relocBytes, static_cast<std::uint32_t>(blockSize));
+                for (std::uint16_t entry : entries) {
+                    appendU16(relocBytes, entry);
+                }
+            }
+        }
+
+        const std::uint32_t textRaw = linkedImage_.headersSize;
+        const std::uint32_t textRawSize = static_cast<std::uint32_t>(alignTo(textBytes.size(), linkedImage_.fileAlignment));
+        const std::uint32_t rdataRaw = textRaw + textRawSize;
+        const std::uint32_t rdataRawSize = static_cast<std::uint32_t>(alignTo(rdataBytes.size(), linkedImage_.fileAlignment));
+        const std::uint32_t idataRaw = rdataRaw + rdataRawSize;
+        const std::uint32_t idataRawSize = static_cast<std::uint32_t>(alignTo(idataBytes.size(), linkedImage_.fileAlignment));
+        const std::uint32_t relocRaw = idataRaw + idataRawSize;
+        const std::uint32_t relocRawSize = static_cast<std::uint32_t>(alignTo(relocBytes.size(), linkedImage_.fileAlignment));
+
+        linkedImage_.sections.clear();
+        linkedImage_.sections.push_back(linker::LinkSection{
+            ".text", SectionId::Text, 0x60000020, linkedImage_.sectionAlignment, textBytes,
+            textRva, textRaw, static_cast<std::uint32_t>(textBytes.size()), textRawSize});
+        linkedImage_.sections.push_back(linker::LinkSection{
+            ".rdata", SectionId::Rdata, 0x40000040, linkedImage_.sectionAlignment, rdataBytes,
+            rdataRva, rdataRaw, static_cast<std::uint32_t>(rdataBytes.size()), rdataRawSize});
+        linkedImage_.sections.push_back(linker::LinkSection{
+            ".idata", SectionId::Idata, 0xC0000040, linkedImage_.sectionAlignment, idataBytes,
+            idataRva, idataRaw, static_cast<std::uint32_t>(idataBytes.size()), idataRawSize});
+        if (!relocBytes.empty()) {
+            linkedImage_.sections.push_back(linker::LinkSection{
+                ".reloc", SectionId::Reloc, 0x42000040, linkedImage_.sectionAlignment, relocBytes,
+                relocRva, relocRaw, static_cast<std::uint32_t>(relocBytes.size()), relocRawSize});
+        }
+
+        const std::uint32_t imageTailRva = relocBytes.empty()
+            ? idataRva + static_cast<std::uint32_t>(alignTo(idataBytes.size(), linkedImage_.sectionAlignment))
+            : relocRva + static_cast<std::uint32_t>(alignTo(relocBytes.size(), linkedImage_.sectionAlignment));
+        linkedImage_.sizeOfImage = static_cast<std::uint32_t>(alignTo(imageTailRva, linkedImage_.sectionAlignment));
+
+        linkedImage_.symbolRvas.clear();
+        for (const auto& [name, resolved] : globals) {
+            linkedImage_.symbolRvas[name] = sectionRva(resolved.section) + static_cast<std::uint32_t>(resolved.offset);
+        }
+
+        const auto entryIt = linkedImage_.symbolRvas.find("__voltis_entry");
+        if (entryIt == linkedImage_.symbolRvas.end()) {
+            diagnostics.error({}, "direct pe backend linker: missing entry symbol '__voltis_entry'");
+            return false;
+        }
+        linkedImage_.entryPointRva = entryIt->second;
+        linkedImage_.importDirectoryRva = idataRva;
+        linkedImage_.importDirectorySize = static_cast<std::uint32_t>(idataBytes.size());
+        if (!iatOffsetsSnapshot_.empty()) {
+            std::size_t minIat = std::numeric_limits<std::size_t>::max();
+            std::size_t maxIat = 0;
+            for (const auto& [_, offset] : iatOffsetsSnapshot_) {
+                minIat = std::min(minIat, offset);
+                maxIat = std::max(maxIat, offset + 8);
+            }
+            linkedImage_.iatDirectoryRva = idataRva + static_cast<std::uint32_t>(minIat);
+            linkedImage_.iatDirectorySize = static_cast<std::uint32_t>(maxIat - minIat);
+        } else {
+            linkedImage_.iatDirectoryRva = 0;
+            linkedImage_.iatDirectorySize = 0;
+        }
+        if (!relocBytes.empty()) {
+            linkedImage_.baseRelocDirectoryRva = relocRva;
+            linkedImage_.baseRelocDirectorySize = static_cast<std::uint32_t>(relocBytes.size());
+        } else {
+            linkedImage_.baseRelocDirectoryRva = 0;
+            linkedImage_.baseRelocDirectorySize = 0;
+        }
+
+        return true;
     }
 
     SectionBuilder text_{SectionId::Text};
@@ -720,8 +1447,12 @@ private:
     SectionBuilder idata_{SectionId::Idata};
     ImportTableBuilder imports_;
     std::unordered_map<std::string, Symbol> symbols_;
+    std::unordered_map<std::string, std::size_t> linkSymbolIndexByName_;
     std::unordered_map<std::string, std::string> stringLabels_;
-    std::vector<Fixup> fixups_;
+    linker::LinkObject linkObject_{};
+    linker::LinkedImage linkedImage_{};
+    std::unordered_map<std::string, std::size_t> iatOffsetsSnapshot_;
+    bool importsFinalized_ = false;
 };
 
 static bool isSupportedType(const vir::Type& type) {
@@ -742,7 +1473,9 @@ static std::uint64_t doubleToBits(double value) {
 class WindowsPeX64Emitter {
 public:
     explicit WindowsPeX64Emitter(const BackendOptions& options)
-        : options_(options), asm_(image_.text(), image_.fixups()) {
+        : options_(options),
+          image_(options.moduleName + ".obj"),
+          asm_(image_.text(), image_.fixups()) {
         registerImports();
     }
 
@@ -751,9 +1484,16 @@ public:
         if (!emitModule(module, result.diagnostics)) {
             return result;
         }
-        const std::string entryLabel = "__voltis_entry";
-        const std::uint32_t entryOffset = static_cast<std::uint32_t>(image_.symbol(entryLabel).offset);
-        const std::string payload = image_.writeBinary(entryOffset);
+        std::uint32_t entryOffset = 0;
+        std::string payload;
+        if (!image_.buildImage(result.diagnostics, payload, entryOffset)) {
+            return result;
+        }
+        (void)entryOffset;
+        if (const auto validationError = validatePeExecutablePayload(payload); validationError.has_value()) {
+            result.diagnostics.error({}, "direct pe backend linker self-check failed: " + *validationError);
+            return result;
+        }
         result.artifacts.push_back(BackendArtifact{
             BackendOutputKind::Executable,
             options_.moduleName + ".exe",
@@ -818,8 +1558,26 @@ private:
 
     bool registerExternImports(const vir::Module& module, DiagnosticBag& diagnostics) {
         externImports_.clear();
+        std::unordered_map<std::string, std::string> resolvedByImportPath;
+        for (const auto& importDecl : module.imports) {
+            const ImportPathKind kind = classifyImportPath(importDecl.path);
+            if (kind == ImportPathKind::SourceModule) {
+                continue;
+            }
+
+            const std::string resolvedDll = normalizeNativeLibraryNameForPe(importDecl.path);
+            if (resolvedDll.empty()) {
+                diagnostics.error({}, "direct pe backend: cannot resolve native library import '" + importDecl.path + "'");
+                return false;
+            }
+            resolvedByImportPath[importDecl.path] = resolvedDll;
+        }
+
         for (const auto& externFunction : module.externFunctions) {
-            const std::string dll = normalizeImportLibraryName(externFunction.importPath);
+            auto resolvedIt = resolvedByImportPath.find(externFunction.importPath);
+            std::string dll = resolvedIt == resolvedByImportPath.end()
+                ? normalizeNativeLibraryNameForPe(externFunction.importPath)
+                : resolvedIt->second;
             if (dll.empty()) {
                 diagnostics.error(externFunction.location, "direct pe backend: extern function '" + externFunction.name + "' has an empty import path");
                 return false;
@@ -835,7 +1593,7 @@ private:
         (void)diagnostics;
         resetTemps();
         const std::string label = "__voltis_entry";
-        image_.defineSymbol(label, SectionId::Text, asm_.currentOffset());
+        image_.defineGlobalSymbol(label, SectionId::Text, asm_.currentOffset());
         asm_.markLabel(label, symbols_);
 
         asm_.emitPushRbp();
@@ -884,7 +1642,7 @@ private:
         }
 
         const std::string fnLabel = functionLabel(function.name);
-        image_.defineSymbol(fnLabel, SectionId::Text, asm_.currentOffset());
+        image_.defineGlobalSymbol(fnLabel, SectionId::Text, asm_.currentOffset());
         asm_.markLabel(fnLabel, symbols_);
         asm_.emitPushRbp();
         asm_.emitMovRbpRsp();
@@ -1504,7 +2262,7 @@ private:
             if (externIt != externImports_.end()) {
                 dll = externIt->second;
             } else {
-                dll = normalizeImportLibraryName(inst.importPath);
+                dll = normalizeNativeLibraryNameForPe(inst.importPath);
             }
 
             if (dll.empty()) {

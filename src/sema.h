@@ -2,6 +2,7 @@
 
 #include "ast.h"
 #include "diagnostics.h"
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -50,8 +51,14 @@ private:
         SourceLocation location;
     };
 
+    struct StructFieldSymbol {
+        std::string type;
+        SourceLocation location;
+    };
+
     DiagnosticBag diagnostics_;
     std::unordered_map<std::string, FunctionSymbol> functions_;
+    std::unordered_map<std::string, std::unordered_map<std::string, StructFieldSymbol>> structs_;
     std::unordered_set<std::string> importedPaths_;
     std::vector<std::unordered_map<std::string, VariableSymbol>> scopes_;
     std::unordered_map<const Expr*, std::string> expressionTypes_;
@@ -59,6 +66,7 @@ private:
     std::string currentReturnType_;
     int loopDepth_ = 0;
 
+    void registerStructs(const Program& program);
     void registerImports(const Program& program);
     void registerFunctions(const Program& program);
     void analyzeFunction(FunctionDecl& function);
@@ -84,6 +92,11 @@ private:
     bool isNumericStringForFloat(const std::string& value) const;
     bool isBoolString(const std::string& value) const;
     std::string allowedReceiverTypes(const std::string& method) const;
+    std::optional<std::string> baseTypeIfPointer(const std::string& type) const;
+    std::optional<std::string> baseTypeIfReference(const std::string& type) const;
+    std::optional<std::string> arrayElementType(const std::string& type) const;
+    std::optional<std::string> sliceElementType(const std::string& type) const;
+    bool isDigits(const std::string& value) const;
     std::string setConversionInfo(const Expr* expr, const std::string& resultType, const std::string& sourceType, const std::string& method, ConversionKind kind);
     std::string makeTypeErrorType(Expr* expr, const std::string& message);
     std::string setExprType(const Expr* expr, const std::string& type);

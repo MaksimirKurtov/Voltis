@@ -1,0 +1,9 @@
+public fn maybe(bool enabled) -> int32 {
+    if (enabled) {
+        return 1;
+    }
+}
+
+public fn main() -> int32 {
+    return 0;
+}

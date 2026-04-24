@@ -589,6 +589,11 @@ private:
             if (!operand.value.has_value()) {
                 return ValueRef{vir::Type{vir::TypeKind::Void}, std::nullopt};
             }
+        } else if (unary.op == "&" || unary.op == "*") {
+            result_.diagnostics.error(
+                unary.location,
+                "lowering: pointer address-of/dereference operations are not yet supported in VIR lowering");
+            return ValueRef{vir::Type{vir::TypeKind::Void}, std::nullopt};
         } else {
             result_.diagnostics.error(unary.location, "lowering: unsupported unary operator '" + unary.op + "'");
             return ValueRef{vir::Type{vir::TypeKind::Void}, std::nullopt};

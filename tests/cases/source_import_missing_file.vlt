@@ -1,0 +1,5 @@
+import "does_not_exist.vlt";
+
+public fn main() -> int32 {
+    return 0;
+}
