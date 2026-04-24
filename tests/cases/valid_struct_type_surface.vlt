@@ -1,0 +1,12 @@
+struct Node {
+    int32 value;
+    int32* next;
+    int32& alias;
+    int32[4] bucket;
+    int32[] view;
+}
+
+public fn main() -> int32 {
+    print("ok");
+    return 0;
+}

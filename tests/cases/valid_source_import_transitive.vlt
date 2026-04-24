@@ -1,0 +1,8 @@
+import "module_deep_math_a.vlt";
+
+public fn main() -> int32 {
+    int32 total = deepAddOne();
+    print("deep: " + total.ToString());
+    return 0;
+}
+

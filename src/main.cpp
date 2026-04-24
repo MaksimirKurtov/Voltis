@@ -1,13 +1,16 @@
 #include "backend_pe_x64.h"
 #include "backend_llvm_ir.h"
 #include "codegen.h"
+#include "import_utils.h"
 #include "lexer.h"
 #include "lowering.h"
 #include "parser.h"
 #include "sema.h"
 #include "vir.h"
 #include "vir_passes.h"
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -17,11 +20,14 @@
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <system_error>
 #include <thread>
 #include <vector>
@@ -64,7 +70,7 @@ static std::string compilerCommand(const fs::path& cppFile, const fs::path& outp
 }
 
 struct CliOptions {
-    fs::path inputPath;
+    std::vector<fs::path> inputPaths;
     std::optional<fs::path> outputPath;
     std::optional<fs::path> emitCppPath;
     bool emitVir = false;
@@ -86,6 +92,13 @@ static fs::path defaultExecutablePath(const fs::path& inputPath) {
 #endif
 }
 
+static const fs::path& primaryInputPath(const CliOptions& options) {
+    if (options.inputPaths.empty()) {
+        throw std::runtime_error("No input .vlt file supplied");
+    }
+    return options.inputPaths.front();
+}
+
 static void runCommandOrThrow(const std::string& command, const std::string& failureMessage) {
     std::cout << "Invoking: " << command << "\n";
     int code = std::system(command.c_str());
@@ -95,7 +108,7 @@ static void runCommandOrThrow(const std::string& command, const std::string& fai
 }
 
 static void printUsage() {
-    std::cout << "voltisc <input.vlt> [options]\n"
+    std::cout << "voltisc <input.vlt> [more_inputs.vlt ...] [options]\n"
               << "voltisc --benchmark [-o <benchmark.exe>]\n"
               << "Default: native compile to a Windows x64 PE executable.\n"
               << "Options:\n"
@@ -147,17 +160,14 @@ static CliOptions parseCliOptions(int argc, char** argv) {
             continue;
         }
         if (!arg.empty() && arg[0] != '-') {
-            if (!options.inputPath.empty()) {
-                throw std::runtime_error("Only one input file is supported");
-            }
-            options.inputPath = fs::path(arg);
+            options.inputPaths.push_back(fs::path(arg));
             continue;
         }
         throw std::runtime_error("Unknown argument: " + arg);
     }
 
     if (options.benchmark) {
-        if (!options.inputPath.empty()) {
+        if (!options.inputPaths.empty()) {
             throw std::runtime_error("--benchmark does not accept an input .vlt file");
         }
         if (options.bootstrapCpp || options.emitVir || options.emitLlvm ||
@@ -167,7 +177,7 @@ static CliOptions parseCliOptions(int argc, char** argv) {
         return options;
     }
 
-    if (options.inputPath.empty()) {
+    if (options.inputPaths.empty()) {
         throw std::runtime_error("No input .vlt file supplied");
     }
     if (options.noLink && !options.bootstrapCpp) {
@@ -202,11 +212,128 @@ struct FrontendPipelineResult {
     vir::Module module;
 };
 
-static FrontendPipelineResult runFrontendPipeline(const std::string& source) {
+static Program parseProgramFromSource(const std::string& source, const std::string& contextLabel) {
     Lexer lexer(source);
-    auto tokens = lexer.tokenize();
-    Parser parser(std::move(tokens));
-    Program program = parser.parseProgram();
+    Parser parser(lexer.tokenize());
+    try {
+        return parser.parseProgram();
+    } catch (const std::exception& ex) {
+        throw std::runtime_error("Parse failed for " + contextLabel + ": " + ex.what());
+    }
+}
+
+struct ModuleBuildState {
+    std::unordered_set<std::string> loaded;
+    std::unordered_set<std::string> inProgress;
+    std::vector<std::string> stack;
+    std::vector<Program> programsInDependencyOrder;
+};
+
+static std::string normalizedKey(const fs::path& path) {
+    std::string key = path.lexically_normal().string();
+#ifdef _WIN32
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+        if (c == '\\') {
+            return '/';
+        }
+        return static_cast<char>(std::tolower(c));
+    });
+#endif
+    return key;
+}
+
+static fs::path resolveCanonical(const fs::path& path) {
+    std::error_code ec;
+    const fs::path canonical = fs::weakly_canonical(path, ec);
+    if (!ec) {
+        return canonical;
+    }
+    return path.lexically_normal();
+}
+
+static Program mergePrograms(std::vector<Program>&& programs) {
+    Program merged;
+    std::unordered_set<std::string> seenImports;
+    for (auto& program : programs) {
+        std::unordered_set<std::string> seenInCurrentProgram;
+        merged.structs.insert(
+            merged.structs.end(),
+            std::make_move_iterator(program.structs.begin()),
+            std::make_move_iterator(program.structs.end()));
+        merged.externFunctions.insert(
+            merged.externFunctions.end(),
+            std::make_move_iterator(program.externFunctions.begin()),
+            std::make_move_iterator(program.externFunctions.end()));
+        merged.functions.insert(
+            merged.functions.end(),
+            std::make_move_iterator(program.functions.begin()),
+            std::make_move_iterator(program.functions.end()));
+        for (const auto& importDecl : program.imports) {
+            const std::string key = normalizedKey(importDecl.path);
+            const bool duplicateInsideCurrent = !seenInCurrentProgram.insert(key).second;
+            if (duplicateInsideCurrent || seenImports.insert(key).second) {
+                merged.imports.push_back(importDecl);
+            }
+        }
+    }
+    return merged;
+}
+
+static void loadProgramRecursive(const fs::path& modulePath, ModuleBuildState& state) {
+    const fs::path canonicalPath = resolveCanonical(modulePath);
+    const std::string key = normalizedKey(canonicalPath);
+    if (state.loaded.find(key) != state.loaded.end()) {
+        return;
+    }
+    if (state.inProgress.find(key) != state.inProgress.end()) {
+        std::ostringstream cycle;
+        for (const auto& item : state.stack) {
+            cycle << item << " -> ";
+        }
+        cycle << canonicalPath.string();
+        throw std::runtime_error("Source module import cycle detected: " + cycle.str());
+    }
+
+    if (!fs::exists(canonicalPath)) {
+        throw std::runtime_error("Source module not found: " + canonicalPath.string());
+    }
+
+    state.inProgress.insert(key);
+    state.stack.push_back(canonicalPath.string());
+
+    Program parsed = parseProgramFromSource(readFile(canonicalPath), canonicalPath.string());
+    std::vector<ImportDecl> runtimeImports;
+    runtimeImports.reserve(parsed.imports.size());
+
+    for (const auto& importDecl : parsed.imports) {
+        if (isSourceModuleImportPath(importDecl.path)) {
+            const fs::path childPath = resolveCanonical(canonicalPath.parent_path() / fs::path(importDecl.path));
+            loadProgramRecursive(childPath, state);
+        } else {
+            runtimeImports.push_back(importDecl);
+        }
+    }
+    parsed.imports = std::move(runtimeImports);
+    state.programsInDependencyOrder.push_back(std::move(parsed));
+
+    state.stack.pop_back();
+    state.inProgress.erase(key);
+    state.loaded.insert(key);
+}
+
+static Program buildProgramFromEntryFiles(const std::vector<fs::path>& entryFilePaths) {
+    if (entryFilePaths.empty()) {
+        throw std::runtime_error("No input .vlt file supplied");
+    }
+
+    ModuleBuildState state;
+    for (const auto& entryFilePath : entryFilePaths) {
+        loadProgramRecursive(entryFilePath, state);
+    }
+    return mergePrograms(std::move(state.programsInDependencyOrder));
+}
+
+static FrontendPipelineResult runFrontendPipeline(Program program) {
 
     SemanticAnalyzer sema;
     if (!sema.analyze(program)) {
@@ -439,42 +566,70 @@ static double improvementPercent(double baseline, double current) {
     return improvement > 0.0 ? improvement : 0.0;
 }
 
-static long long benchmarkInstructionCount() {
-    constexpr long long kIterations = 400000;
-    constexpr long long kOpsPerIteration = 8;
-    return kIterations * kOpsPerIteration;
+static constexpr int kDefaultBenchmarkIterations = 1000000000;
+static constexpr long long kBenchmarkOpsPerIteration = 7;
+
+static std::string formatIntegerWithCommas(long long value) {
+    std::string text = std::to_string(value);
+    for (long long i = static_cast<long long>(text.size()) - 3; i > 0; i -= 3) {
+        text.insert(static_cast<std::size_t>(i), ",");
+    }
+    return text;
 }
 
-static std::string benchmarkSource() {
-    return R"(public fn benchmark_kernel(int32 iterations) -> int32 {
-    int32 acc = 1;
-    int32 i = 0;
-    while (i < iterations) {
-        acc = acc + (i * 3);
-        acc = acc - (i / 2);
-        if (acc > 1000000) {
-            acc = acc - 1000000;
-        }
-        if (acc < 0) {
-            acc = acc + 1000000;
-        }
-        i = i + 1;
+static int resolveBenchmarkIterations(std::vector<std::string>& warnings) {
+    const char* envValue = std::getenv("VOLTIS_BENCHMARK_ITERATIONS");
+    if (envValue == nullptr || *envValue == '\0') {
+        return kDefaultBenchmarkIterations;
     }
-    return acc;
+
+    try {
+        const long long parsed = std::stoll(envValue);
+        if (parsed <= 0 || parsed > std::numeric_limits<int>::max()) {
+            throw std::out_of_range("out of range");
+        }
+        return static_cast<int>(parsed);
+    } catch (const std::exception&) {
+        warnings.push_back(
+            "invalid VOLTIS_BENCHMARK_ITERATIONS value '" + std::string(envValue) + "', using default " +
+            std::to_string(kDefaultBenchmarkIterations));
+        return kDefaultBenchmarkIterations;
+    }
 }
 
-public fn main() -> int32 {
-    int32 result = benchmark_kernel(400000);
-    if (result == -1) {
-        print("unreachable");
-    }
-    return 0;
+static long long benchmarkInstructionCount(int iterations) {
+    return static_cast<long long>(iterations) * kBenchmarkOpsPerIteration;
 }
-)";
+
+static std::string benchmarkSource(int iterations) {
+    std::ostringstream source;
+    source << "public fn benchmark_leibniz_pi(int32 iterations) -> float64 {\n"
+           << "    float64 sum = 0.0;\n"
+           << "    int32 i = 0;\n"
+           << "    int32 sign = 1;\n"
+           << "    while (i < iterations) {\n"
+           << "        int32 denominator_int = (i * 2) + 1;\n"
+           << "        float64 denominator = denominator_int.ToFloat64();\n"
+           << "        float64 term = sign.ToFloat64() / denominator;\n"
+           << "        sum = sum + term;\n"
+           << "        sign = 0 - sign;\n"
+           << "        i = i + 1;\n"
+           << "    }\n"
+           << "    return sum * 4.0;\n"
+           << "}\n\n"
+           << "public fn main() -> int32 {\n"
+           << "    float64 pi = benchmark_leibniz_pi(" << iterations << ");\n"
+           << "    if (pi < 0.0) {\n"
+           << "        print(\"unreachable\");\n"
+           << "    }\n"
+           << "    return 0;\n"
+           << "}\n";
+    return source.str();
 }
 
 static int runBenchmarkMode(const CliOptions& options) {
     std::vector<std::string> warnings;
+    const int benchmarkIterations = resolveBenchmarkIterations(warnings);
     std::string tempWarning;
     const fs::path tempDir = benchmarkTempDirectory(tempWarning);
     if (!tempWarning.empty()) {
@@ -499,9 +654,13 @@ static int runBenchmarkMode(const CliOptions& options) {
     const bool keepExecutable = options.outputPath.has_value();
 
     std::cout << "*** Voltis Benchmark ***\n";
+    std::cout << "Speed Comparison - Leibniz pi, "
+              << formatIntegerWithCommas(benchmarkIterations)
+              << " iterations\n";
 
     const auto compileOp = [&]() -> bool {
-        FrontendPipelineResult pipeline = runFrontendPipeline(benchmarkSource());
+        Program benchmarkProgram = parseProgramFromSource(benchmarkSource(benchmarkIterations), "<embedded benchmark>");
+        FrontendPipelineResult pipeline = runFrontendPipeline(std::move(benchmarkProgram));
         BackendArtifact artifact = compileNativeExecutableArtifact(pipeline.module, "voltis_benchmark");
         writeFile(benchmarkExePath, artifact.payload);
         return true;
@@ -525,7 +684,7 @@ static int runBenchmarkMode(const CliOptions& options) {
         currentTimestamp(),
         compileSeconds,
         benchmarkSeconds,
-        benchmarkInstructionCount()
+        benchmarkInstructionCount(benchmarkIterations)
     };
 
     std::string appendWarning;
@@ -578,8 +737,9 @@ int main(int argc, char** argv) {
             return runBenchmarkMode(options);
         }
 
-        const std::string source = readFile(options.inputPath);
-        FrontendPipelineResult pipeline = runFrontendPipeline(source);
+        const fs::path& primaryInput = primaryInputPath(options);
+        Program program = buildProgramFromEntryFiles(options.inputPaths);
+        FrontendPipelineResult pipeline = runFrontendPipeline(std::move(program));
 
         if (options.bootstrapCpp) {
             std::cout << "Using bootstrap C++ backend (temporary scaffolding, not production direction).\n";
@@ -587,7 +747,7 @@ int main(int argc, char** argv) {
             const std::string cppSource = generator.generate(pipeline.program);
             const fs::path generatedCpp = options.emitCppPath.has_value()
                 ? *options.emitCppPath
-                : defaultArtifactPath(options.inputPath, ".generated.cpp");
+                : defaultArtifactPath(primaryInput, ".generated.cpp");
             writeFile(generatedCpp, cppSource);
             std::cout << "Generated C++: " << generatedCpp.string() << "\n";
 
@@ -605,16 +765,18 @@ int main(int argc, char** argv) {
 
         const bool defaultNativeExe = !options.emitVir && !options.emitLlvm;
         if (defaultNativeExe) {
+            const std::string moduleName =
+                options.inputPaths.size() == 1 ? primaryInput.stem().string() : "multi_module";
             BackendArtifact executableArtifact =
-                compileNativeExecutableArtifact(pipeline.module, options.inputPath.stem().string());
-            const fs::path executablePath = options.outputPath.value_or(defaultExecutablePath(options.inputPath));
+                compileNativeExecutableArtifact(pipeline.module, moduleName);
+            const fs::path executablePath = options.outputPath.value_or(defaultExecutablePath(primaryInput));
             writeFile(executablePath, executableArtifact.payload);
             std::cout << "Built executable: " << executablePath.string() << "\n";
             return 0;
         }
 
         if (options.emitVir) {
-            const fs::path virPath = options.outputPath.value_or(defaultArtifactPath(options.inputPath, ".vir"));
+            const fs::path virPath = options.outputPath.value_or(defaultArtifactPath(primaryInput, ".vir"));
             writeFile(virPath, vir::dump(pipeline.module));
             std::cout << "Emitted VIR: " << virPath.string() << "\n";
         }
@@ -624,7 +786,8 @@ int main(int argc, char** argv) {
             BackendOptions backendOptions;
             backendOptions.output = BackendOutputKind::LlvmIrText;
             backendOptions.track = BackendTrack::ProductionDirected;
-            backendOptions.moduleName = options.inputPath.stem().string();
+            backendOptions.moduleName =
+                options.inputPaths.size() == 1 ? primaryInput.stem().string() : "multi_module";
 
             BackendResult backendResult = backend->compile(pipeline.module, backendOptions);
             if (!backendResult.ok()) {
@@ -644,7 +807,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("LLVM backend produced no LLVM IR artifact");
             }
 
-            const fs::path llvmPath = options.outputPath.value_or(defaultArtifactPath(options.inputPath, ".ll"));
+            const fs::path llvmPath = options.outputPath.value_or(defaultArtifactPath(primaryInput, ".ll"));
             writeFile(llvmPath, llvmArtifact->payload);
             std::cout << "Emitted LLVM IR: " << llvmPath.string() << "\n";
         }

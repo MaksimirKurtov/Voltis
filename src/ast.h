@@ -141,7 +141,20 @@ struct ExternFunctionDecl {
     SourceLocation location;
 };
 
+struct StructField {
+    std::string type;
+    std::string name;
+    SourceLocation location;
+};
+
+struct StructDecl {
+    std::string name;
+    std::vector<StructField> fields;
+    SourceLocation location;
+};
+
 struct Program {
+    std::vector<StructDecl> structs;
     std::vector<ImportDecl> imports;
     std::vector<ExternFunctionDecl> externFunctions;
     std::vector<FunctionDecl> functions;

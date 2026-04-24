@@ -1,0 +1,6 @@
+import "module_deep_math_b.vlt";
+
+public fn deepAddOne() -> int32 {
+    return deepValue() + 1;
+}
+

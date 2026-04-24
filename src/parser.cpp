@@ -54,11 +54,70 @@ bool Parser::isTypeToken(TokenType type) const {
     }
 }
 
-std::string Parser::parseType() {
-    if (isTypeToken(peek().type)) {
-        return advance().lexeme;
+bool Parser::canStartType(TokenType type) const {
+    return isTypeToken(type) || type == TokenType::Identifier;
+}
+
+bool Parser::looksLikeTypedVarDecl(std::size_t start) const {
+    if (start >= tokens_.size() || !canStartType(tokens_[start].type)) {
+        return false;
     }
-    throw std::runtime_error("Expected type at line " + std::to_string(peek().line));
+
+    std::size_t i = start + 1;
+    while (i < tokens_.size()) {
+        if (tokens_[i].type == TokenType::Star || tokens_[i].type == TokenType::Ampersand) {
+            ++i;
+            continue;
+        }
+        if (tokens_[i].type == TokenType::LBracket) {
+            ++i;
+            if (i < tokens_.size() && tokens_[i].type == TokenType::Number) {
+                ++i;
+            }
+            if (i >= tokens_.size() || tokens_[i].type != TokenType::RBracket) {
+                return false;
+            }
+            ++i;
+            continue;
+        }
+        break;
+    }
+
+    if (i + 1 >= tokens_.size()) {
+        return false;
+    }
+    return tokens_[i].type == TokenType::Identifier && tokens_[i + 1].type == TokenType::Assign;
+}
+
+std::string Parser::parseType() {
+    if (!canStartType(peek().type)) {
+        throw std::runtime_error("Expected type at line " + std::to_string(peek().line));
+    }
+
+    std::string type = advance().lexeme;
+    while (true) {
+        if (match(TokenType::Star)) {
+            type += "*";
+            continue;
+        }
+        if (match(TokenType::Ampersand)) {
+            type += "&";
+            continue;
+        }
+        if (match(TokenType::LBracket)) {
+            if (match(TokenType::RBracket)) {
+                type += "[]";
+                continue;
+            }
+            const Token& sizeToken = consume(TokenType::Number, "Expected array size inside type brackets");
+            consume(TokenType::RBracket, "Expected ']' after array size");
+            type += "[" + sizeToken.lexeme + "]";
+            continue;
+        }
+        break;
+    }
+
+    return type;
 }
 
 Program Parser::parseProgram() {
@@ -71,6 +130,11 @@ Program Parser::parseProgram() {
 
         const std::size_t declarationStart = current_;
         skipModifiers();
+        if (check(TokenType::KeywordStruct)) {
+            current_ = declarationStart;
+            program.structs.push_back(parseStructDecl());
+            continue;
+        }
         if (check(TokenType::KeywordExtern)) {
             current_ = declarationStart;
             program.externFunctions.push_back(parseExternFunction());
@@ -112,6 +176,32 @@ ImportDecl Parser::parseImportDecl() {
     const std::string path = parseImportPath();
     consume(TokenType::Semicolon, "Expected ';' after import declaration");
     return ImportDecl{path, SourceLocation{importToken.line, importToken.column}};
+}
+
+StructDecl Parser::parseStructDecl() {
+    skipModifiers();
+    const Token& structToken = consume(TokenType::KeywordStruct, "Expected 'struct'");
+    const Token& nameToken = consume(TokenType::Identifier, "Expected struct name");
+    consume(TokenType::LBrace, "Expected '{' after struct name");
+
+    std::vector<StructField> fields;
+    while (!check(TokenType::RBrace) && !isAtEnd()) {
+        const std::string fieldType = parseType();
+        const Token& fieldName = consume(TokenType::Identifier, "Expected struct field name");
+        consume(TokenType::Semicolon, "Expected ';' after struct field declaration");
+        fields.push_back(StructField{
+            fieldType,
+            fieldName.lexeme,
+            SourceLocation{fieldName.line, fieldName.column}
+        });
+    }
+    consume(TokenType::RBrace, "Expected '}' after struct declaration");
+
+    return StructDecl{
+        nameToken.lexeme,
+        std::move(fields),
+        SourceLocation{structToken.line, structToken.column}
+    };
 }
 
 FunctionDecl Parser::parseFunction() {
@@ -185,7 +275,7 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
 
     std::size_t save = current_;
     skipModifiers();
-    if (check(TokenType::KeywordVar) || isTypeToken(peek().type)) {
+    if (check(TokenType::KeywordVar) || looksLikeTypedVarDecl(current_)) {
         current_ = save;
         return parseVarDeclStatement();
     }
@@ -351,7 +441,7 @@ std::unique_ptr<Expr> Parser::parseFactor() {
 }
 
 std::unique_ptr<Expr> Parser::parseUnary() {
-    if (matchAny({TokenType::Minus, TokenType::Bang, TokenType::KeywordNot})) {
+    if (matchAny({TokenType::Minus, TokenType::Bang, TokenType::KeywordNot, TokenType::Ampersand, TokenType::Star})) {
         const Token& opToken = previous();
         return std::make_unique<UnaryExpr>(opToken.lexeme, parseUnary(), SourceLocation{opToken.line, opToken.column});
     }

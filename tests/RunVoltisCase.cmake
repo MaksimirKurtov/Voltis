@@ -37,10 +37,13 @@ set(expected_stderr)
 set(expected_file "")
 set(expected_file_contains)
 set(expected_file_not_contains)
+set(expected_file_hex_contains)
+set(expected_file_hex_not_contains)
 set(run_emitted FALSE)
 set(expected_run_stdout)
 set(run_without_source FALSE)
 set(expect_benchmark_history FALSE)
+set(benchmark_iterations_override "")
 
 if(CASE STREQUAL "valid-default")
     set(source_file "${CASE_DIR}/valid_simple.vlt")
@@ -133,11 +136,170 @@ elseif(CASE STREQUAL "valid-default-dll-import")
         "Built executable:")
     set(run_emitted TRUE)
     set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "valid-default-import-lib")
+    set(source_file "${CASE_DIR}/valid_import_lib.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_import_lib.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_import_lib")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "valid-default-import-a")
+    set(source_file "${CASE_DIR}/valid_import_a.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_import_a.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_import_a")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "valid-default-import-so")
+    set(source_file "${CASE_DIR}/valid_import_so.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_import_so.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_import_so")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "valid-default-import-dylib")
+    set(source_file "${CASE_DIR}/valid_import_dylib.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_import_dylib.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_import_dylib")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "pid: ")
+elseif(CASE STREQUAL "valid-default-source-import")
+    set(source_file "${CASE_DIR}/valid_source_import.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_source_import.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_source_import")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "sum: 5")
+elseif(CASE STREQUAL "valid-default-source-import-transitive")
+    set(source_file "${CASE_DIR}/valid_source_import_transitive.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_source_import_transitive.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_source_import_transitive")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "deep: 10")
+elseif(CASE STREQUAL "valid-default-multi-root-inputs")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_multi_root_inputs.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_multi_root_inputs")
+    endif()
+    set(run_without_source TRUE)
+    set(args
+        "${CASE_DIR}/multi_root_main.vlt"
+        "${CASE_DIR}/multi_root_helpers.vlt"
+        -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "multi: 10")
+elseif(CASE STREQUAL "valid-default-multi-root-linker-chain")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_multi_root_linker_chain.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_multi_root_linker_chain")
+    endif()
+    set(run_without_source TRUE)
+    set(args
+        "${CASE_DIR}/multi_root_linker_chain_main.vlt"
+        "${CASE_DIR}/multi_root_linker_chain_helpers.vlt"
+        -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "chain: 50")
+elseif(CASE STREQUAL "valid-default-struct-type-surface")
+    set(source_file "${CASE_DIR}/valid_struct_type_surface.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_struct_type_surface.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_struct_type_surface")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "ok")
+elseif(CASE STREQUAL "valid-default-linker-relocation-stress")
+    set(source_file "${CASE_DIR}/valid_linker_relocation_stress.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_linker_relocation_stress.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_linker_relocation_stress")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(run_emitted TRUE)
+    set(expected_run_stdout "link: 45")
+elseif(CASE STREQUAL "valid-default-pe-layout-metadata")
+    set(source_file "${CASE_DIR}/valid_simple.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_pe_layout_metadata.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_pe_layout_metadata")
+    endif()
+    set(args -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Built executable:")
+    set(expected_file_hex_contains
+        "4d5a"
+        "50450000"
+        "2e74657874000000"
+        "2e72646174610000"
+        "2e69646174610000"
+        "6b65726e656c33322e646c6c00"
+        "6d73766372742e646c6c00")
+    set(expected_file_hex_not_contains
+        "2e72656c6f630000")
 elseif(CASE STREQUAL "benchmark-mode")
     set(run_without_source TRUE)
     set(args --benchmark)
+    set(benchmark_iterations_override "50000")
     set(expected_stdout
         "*** Voltis Benchmark ***"
+        "Speed Comparison - Leibniz pi,"
         "Compiled Successfully:"
         "Benchmarked Successfully:"
         "Total Instructions:"
@@ -198,7 +360,8 @@ elseif(CASE STREQUAL "valid-emit-vir-fold-const-while")
 elseif(CASE STREQUAL "parser-missing-semicolon")
     set(source_file "${CASE_DIR}/parser_missing_semicolon.vlt")
     set(expected_exit 1)
-    set(expected_stderr "voltisc error: Expected ';'")
+    set(expected_stderr "voltisc error: Parse failed for")
+    list(APPEND expected_stderr "Expected ';' at line")
 elseif(CASE STREQUAL "sema-undefined-symbol")
     set(source_file "${CASE_DIR}/sema_undefined_symbol.vlt")
     set(expected_exit 1)
@@ -272,6 +435,14 @@ elseif(CASE STREQUAL "sema-duplicate-import")
     set(source_file "${CASE_DIR}/sema_duplicate_import.vlt")
     set(expected_exit 1)
     set(expected_stderr "error: duplicate import 'kernel32.dll'")
+elseif(CASE STREQUAL "source-import-missing-file")
+    set(source_file "${CASE_DIR}/source_import_missing_file.vlt")
+    set(expected_exit 1)
+    set(expected_stderr "voltisc error: Source module not found:")
+elseif(CASE STREQUAL "source-import-cycle")
+    set(source_file "${CASE_DIR}/source_import_cycle_a.vlt")
+    set(expected_exit 1)
+    set(expected_stderr "voltisc error: Source module import cycle detected:")
 else()
     message(FATAL_ERROR "Unknown CASE '${CASE}'")
 endif()
@@ -290,19 +461,37 @@ if(NOT "${expected_file}" STREQUAL "")
 endif()
 
 if(run_without_source)
-    execute_process(
-        COMMAND "${VOLTISC}" ${args}
-        RESULT_VARIABLE actual_exit
-        OUTPUT_VARIABLE actual_stdout
-        ERROR_VARIABLE actual_stderr
-    )
+    if(NOT "${benchmark_iterations_override}" STREQUAL "")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E env "VOLTIS_BENCHMARK_ITERATIONS=${benchmark_iterations_override}" "${VOLTISC}" ${args}
+            RESULT_VARIABLE actual_exit
+            OUTPUT_VARIABLE actual_stdout
+            ERROR_VARIABLE actual_stderr
+        )
+    else()
+        execute_process(
+            COMMAND "${VOLTISC}" ${args}
+            RESULT_VARIABLE actual_exit
+            OUTPUT_VARIABLE actual_stdout
+            ERROR_VARIABLE actual_stderr
+        )
+    endif()
 else()
-    execute_process(
-        COMMAND "${VOLTISC}" "${source_file}" ${args}
-        RESULT_VARIABLE actual_exit
-        OUTPUT_VARIABLE actual_stdout
-        ERROR_VARIABLE actual_stderr
-    )
+    if(NOT "${benchmark_iterations_override}" STREQUAL "")
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" -E env "VOLTIS_BENCHMARK_ITERATIONS=${benchmark_iterations_override}" "${VOLTISC}" "${source_file}" ${args}
+            RESULT_VARIABLE actual_exit
+            OUTPUT_VARIABLE actual_stdout
+            ERROR_VARIABLE actual_stderr
+        )
+    else()
+        execute_process(
+            COMMAND "${VOLTISC}" "${source_file}" ${args}
+            RESULT_VARIABLE actual_exit
+            OUTPUT_VARIABLE actual_stdout
+            ERROR_VARIABLE actual_stderr
+        )
+    endif()
 endif()
 
 string(REPLACE "\r\n" "\n" actual_stdout "${actual_stdout}")
@@ -333,6 +522,18 @@ if(NOT "${expected_file}" STREQUAL "")
     foreach(expected IN LISTS expected_file_not_contains)
         assert_not_contains("${emitted_file_content}" "${expected}" "CASE ${CASE} emitted file")
     endforeach()
+    if(expected_file_hex_contains OR expected_file_hex_not_contains)
+        file(READ "${expected_file}" emitted_file_hex HEX)
+        string(TOLOWER "${emitted_file_hex}" emitted_file_hex)
+        foreach(expected IN LISTS expected_file_hex_contains)
+            string(TOLOWER "${expected}" expected_hex_lower)
+            assert_contains("${emitted_file_hex}" "${expected_hex_lower}" "CASE ${CASE} emitted file hex")
+        endforeach()
+        foreach(expected IN LISTS expected_file_hex_not_contains)
+            string(TOLOWER "${expected}" expected_hex_lower)
+            assert_not_contains("${emitted_file_hex}" "${expected_hex_lower}" "CASE ${CASE} emitted file hex")
+        endforeach()
+    endif()
 
     if(run_emitted)
         execute_process(

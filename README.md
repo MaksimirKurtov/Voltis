@@ -111,6 +111,9 @@ build/voltisc examples/hello.vlt -o hello.exe
 # Native executable (default)
 build/voltisc examples/hello.vlt -o hello.exe
 
+# Multi-root compile (multiple input files in one invocation)
+build/voltisc src/main.vlt src/math.vlt src/io.vlt -o app.exe
+
 # Emit VIR text
 build/voltisc examples/hello.vlt --emit-vir -o hello.vir
 

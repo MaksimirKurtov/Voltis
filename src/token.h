@@ -10,6 +10,7 @@ enum class TokenType {
 
     LParen, RParen,
     LBrace, RBrace,
+    LBracket, RBracket,
     Comma, Semicolon,
     Dot,
     Arrow,
@@ -21,6 +22,7 @@ enum class TokenType {
     Less, LessEqual,
     Greater, GreaterEqual,
     Bang,
+    Ampersand,
 
     KeywordPublic,
     KeywordPrivate,
@@ -33,6 +35,7 @@ enum class TokenType {
     KeywordUnsafe,
 
     KeywordFn,
+    KeywordStruct,
     KeywordIf,
     KeywordElse,
     KeywordWhile,

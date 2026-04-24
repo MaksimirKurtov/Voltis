@@ -1,0 +1,4 @@
+public fn deepValue() -> int32 {
+    return 9;
+}
+

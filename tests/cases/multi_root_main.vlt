@@ -1,0 +1,5 @@
+public fn main() -> int32 {
+    int32 total = helper_sum(4, 6);
+    print("multi: " + total.ToString());
+    return 0;
+}

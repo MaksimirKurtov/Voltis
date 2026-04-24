@@ -24,9 +24,12 @@ private:
 
     void skipModifiers();
     bool isTypeToken(TokenType type) const;
+    bool canStartType(TokenType type) const;
+    bool looksLikeTypedVarDecl(std::size_t start) const;
     std::string parseType();
     std::string parseImportPath();
     ImportDecl parseImportDecl();
+    StructDecl parseStructDecl();
     FunctionDecl parseFunction();
     ExternFunctionDecl parseExternFunction();
     std::unique_ptr<BlockStmt> parseBlock();
