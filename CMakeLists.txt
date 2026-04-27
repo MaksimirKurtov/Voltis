@@ -8,6 +8,10 @@ include(CTest)
 
 add_executable(voltisc
     src/main.cpp
+    src/target.cpp
+    src/abi.cpp
+    src/binary_emit_utils.cpp
+    src/executable_format_emit_utils.cpp
     src/diagnostics.cpp
     src/lexer.cpp
     src/parser.cpp
