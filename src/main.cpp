@@ -1,11 +1,15 @@
 #include "backend_pe_x64.h"
 #include "backend_llvm_ir.h"
+#include "abi.h"
+#include "binary_emit_utils.h"
+#include "executable_format_emit_utils.h"
 #include "codegen.h"
 #include "import_utils.h"
 #include "lexer.h"
 #include "lowering.h"
 #include "parser.h"
 #include "sema.h"
+#include "target.h"
 #include "vir.h"
 #include "vir_passes.h"
 #include <algorithm>
@@ -13,6 +17,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -31,6 +36,13 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
@@ -53,20 +65,90 @@ static void writeFile(const fs::path& path, const std::string& data) {
     output << data;
 }
 
-static std::string shellQuote(const std::string& value) {
+static std::vector<std::string> compilerCommandArgs(const fs::path& cppFile, const fs::path& outputFile) {
+    const char* envCompiler = std::getenv("VOLTIS_CXX");
+    const std::string compiler = (envCompiler && *envCompiler) ? std::string(envCompiler) : std::string("g++");
+    return {
+        compiler,
+        "-std=c++17",
+        cppFile.string(),
+        "-o",
+        outputFile.string()
+    };
+}
+
+static std::string renderCommand(const std::vector<std::string>& args) {
+    std::ostringstream out;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) {
+            out << ' ';
+        }
+        out << '"';
+        for (char ch : args[i]) {
+            if (ch == '"') {
+                out << "\\\"";
+            } else {
+                out << ch;
+            }
+        }
+        out << '"';
+    }
+    return out.str();
+}
+
+static int runProcess(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        throw std::runtime_error("Cannot run empty process argument list");
+    }
 #ifdef _WIN32
-    return "\"" + value + "\"";
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+        argv.push_back(arg.c_str());
+    }
+    argv.push_back(nullptr);
+    return _spawnvp(_P_WAIT, args.front().c_str(), argv.data());
 #else
-    return "'" + value + "'";
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    const pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
 #endif
 }
 
-static std::string compilerCommand(const fs::path& cppFile, const fs::path& outputFile) {
-    const char* envCompiler = std::getenv("VOLTIS_CXX");
-    if (envCompiler && *envCompiler) {
-        return std::string(envCompiler) + " -std=c++17 " + shellQuote(cppFile.string()) + " -o " + shellQuote(outputFile.string());
+static void runCommandOrThrow(const std::vector<std::string>& args, const std::string& failureMessage) {
+    std::cout << "Invoking: " << renderCommand(args) << "\n";
+    int code = runProcess(args);
+    if (code != 0) {
+        throw std::runtime_error(failureMessage + " (exit code " + std::to_string(code) + ")");
     }
-    return "g++ -std=c++17 " + shellQuote(cppFile.string()) + " -o " + shellQuote(outputFile.string());
+}
+
+static int runExecutable(const fs::path& executablePath) {
+    return runProcess({executablePath.string()});
 }
 
 struct CliOptions {
@@ -78,6 +160,13 @@ struct CliOptions {
     bool noLink = false;
     bool bootstrapCpp = false;
     bool benchmark = false;
+    std::optional<std::string> targetTriple;
+    std::optional<std::string> archOverride;
+    std::optional<std::string> osOverride;
+    std::optional<std::string> abiOverride;
+    std::optional<fs::path> sysroot;
+    std::optional<BinaryFormat> emitFormat;
+    bool listTargets = false;
 };
 
 static fs::path defaultArtifactPath(const fs::path& inputPath, const std::string& extension) {
@@ -92,19 +181,29 @@ static fs::path defaultExecutablePath(const fs::path& inputPath) {
 #endif
 }
 
+static fs::path defaultFormatPath(const fs::path& inputPath, BinaryFormat format) {
+    switch (format) {
+        case BinaryFormat::Pe32Plus:
+            return defaultExecutablePath(inputPath);
+        case BinaryFormat::Elf:
+            return defaultArtifactPath(inputPath, ".elf");
+        case BinaryFormat::MachO:
+            return defaultArtifactPath(inputPath, ".macho");
+        case BinaryFormat::RawBin:
+            return defaultArtifactPath(inputPath, ".bin");
+        case BinaryFormat::IntelHex:
+            return defaultArtifactPath(inputPath, ".hex");
+        case BinaryFormat::SRecord:
+            return defaultArtifactPath(inputPath, ".srec");
+    }
+    return defaultExecutablePath(inputPath);
+}
+
 static const fs::path& primaryInputPath(const CliOptions& options) {
     if (options.inputPaths.empty()) {
         throw std::runtime_error("No input .vlt file supplied");
     }
     return options.inputPaths.front();
-}
-
-static void runCommandOrThrow(const std::string& command, const std::string& failureMessage) {
-    std::cout << "Invoking: " << command << "\n";
-    int code = std::system(command.c_str());
-    if (code != 0) {
-        throw std::runtime_error(failureMessage + " (exit code " + std::to_string(code) + ")");
-    }
 }
 
 static void printUsage() {
@@ -118,7 +217,14 @@ static void printUsage() {
               << "  --emit-llvm        Emit LLVM IR text (.ll)\n"
               << "  --bootstrap-cpp    Use temporary C++ bootstrap backend (explicit only)\n"
               << "  --emit-cpp <path>  C++ output path (requires --bootstrap-cpp)\n"
-              << "  --no-link          Skip host C++ compile (requires --bootstrap-cpp)\n";
+              << "  --no-link          Skip host C++ compile (requires --bootstrap-cpp)\n"
+              << "  --target <triple>  Target triple (e.g. x86_64-pc-windows-msvc)\n"
+              << "  --arch <arch>      Override target arch segment\n"
+              << "  --os <os>          Override target OS segment\n"
+              << "  --abi <abi>        Override target ABI segment\n"
+              << "  --sysroot <path>   Target sysroot path hint\n"
+              << "  --emit <format>    pe|elf|macho|bin|hex|srec\n"
+              << "  --list-targets     Print supported built-in targets\n";
 }
 
 static CliOptions parseCliOptions(int argc, char** argv) {
@@ -141,6 +247,56 @@ static CliOptions parseCliOptions(int argc, char** argv) {
         }
         if (arg == "--emit-vir") {
             options.emitVir = true;
+            continue;
+        }
+        if (arg == "--list-targets") {
+            options.listTargets = true;
+            continue;
+        }
+        if (arg == "--target") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --target");
+            }
+            options.targetTriple = argv[++i];
+            continue;
+        }
+        if (arg == "--arch") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --arch");
+            }
+            options.archOverride = argv[++i];
+            continue;
+        }
+        if (arg == "--os") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --os");
+            }
+            options.osOverride = argv[++i];
+            continue;
+        }
+        if (arg == "--abi") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --abi");
+            }
+            options.abiOverride = argv[++i];
+            continue;
+        }
+        if (arg == "--sysroot") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --sysroot");
+            }
+            options.sysroot = fs::path(argv[++i]);
+            continue;
+        }
+        if (arg == "--emit") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --emit");
+            }
+            const auto parsedFormat = parseBinaryFormat(argv[++i]);
+            if (!parsedFormat.has_value()) {
+                throw std::runtime_error("Unsupported --emit format");
+            }
+            options.emitFormat = parsedFormat;
             continue;
         }
         if (arg == "--benchmark") {
@@ -166,12 +322,24 @@ static CliOptions parseCliOptions(int argc, char** argv) {
         throw std::runtime_error("Unknown argument: " + arg);
     }
 
+    if (options.listTargets) {
+        if (!options.inputPaths.empty() || options.outputPath.has_value() || options.emitVir || options.emitLlvm ||
+            options.bootstrapCpp || options.emitCppPath.has_value() || options.noLink || options.targetTriple.has_value() ||
+            options.archOverride.has_value() || options.osOverride.has_value() || options.abiOverride.has_value() ||
+            options.sysroot.has_value() || options.emitFormat.has_value() || options.benchmark) {
+            throw std::runtime_error("--list-targets cannot be combined with other options");
+        }
+        return options;
+    }
+
     if (options.benchmark) {
         if (!options.inputPaths.empty()) {
             throw std::runtime_error("--benchmark does not accept an input .vlt file");
         }
         if (options.bootstrapCpp || options.emitVir || options.emitLlvm ||
-            options.emitCppPath.has_value() || options.noLink) {
+            options.emitCppPath.has_value() || options.noLink || options.targetTriple.has_value() || options.archOverride.has_value() ||
+            options.osOverride.has_value() || options.abiOverride.has_value() || options.sysroot.has_value() ||
+            options.emitFormat.has_value()) {
             throw std::runtime_error("--benchmark cannot be combined with emit/bootstrap options");
         }
         return options;
@@ -189,6 +357,9 @@ static CliOptions parseCliOptions(int argc, char** argv) {
     if (options.bootstrapCpp && (options.emitVir || options.emitLlvm)) {
         throw std::runtime_error("--bootstrap-cpp cannot be combined with --emit-vir/--emit-llvm");
     }
+    if (options.emitFormat.has_value() && options.bootstrapCpp) {
+        throw std::runtime_error("--emit is not supported with --bootstrap-cpp");
+    }
 
     const int explicitEmitCount =
         static_cast<int>(options.emitVir) +
@@ -199,6 +370,22 @@ static CliOptions parseCliOptions(int argc, char** argv) {
     }
 
     return options;
+}
+
+static void printSupportedTargets() {
+    const auto targets = listSupportedTargets();
+    std::cout << "Supported targets (" << targets.size() << "):\n";
+    for (const auto& target : targets) {
+        std::cout << "  " << target.triple.canonical << "  ptr" << target.pointerWidth
+                  << "  cc=" << target.callingConvention << "  formats=";
+        for (std::size_t i = 0; i < target.supportedFormats.size(); ++i) {
+            if (i > 0) {
+                std::cout << ",";
+            }
+            std::cout << toString(target.supportedFormats[i]);
+        }
+        std::cout << "\n";
+    }
 }
 
 static std::string diagnosticsToString(const DiagnosticBag& diagnostics) {
@@ -671,7 +858,7 @@ static int runBenchmarkMode(const CliOptions& options) {
     std::cout << "\n";
 
     const auto benchmarkOp = [&]() -> int {
-        return std::system(shellQuote(benchmarkExePath.string()).c_str());
+        return runExecutable(benchmarkExePath);
     };
     auto [benchmarkExitCode, benchmarkSeconds] = runWithSpinner("Benchmarking", benchmarkOp);
     if (benchmarkExitCode != 0) {
@@ -733,8 +920,63 @@ int main(int argc, char** argv) {
 
         const CliOptions options = parseCliOptions(argc, argv);
 
+        if (options.listTargets) {
+            printSupportedTargets();
+            return 0;
+        }
+
         if (options.benchmark) {
             return runBenchmarkMode(options);
+        }
+
+        std::string selectedTargetTriple = options.targetTriple.value_or("x86_64-pc-windows-msvc");
+        if (options.archOverride.has_value() || options.osOverride.has_value() || options.abiOverride.has_value()) {
+            std::array<std::string, 4> parts = {"x86_64", "pc", "windows", "msvc"};
+            std::size_t idx = 0;
+            std::string current;
+            for (char ch : selectedTargetTriple) {
+                if (ch == '-') {
+                    if (idx < parts.size()) {
+                        parts[idx++] = current;
+                    }
+                    current.clear();
+                } else {
+                    current.push_back(ch);
+                }
+            }
+            if (idx < parts.size()) {
+                parts[idx] = current;
+            }
+            if (options.archOverride.has_value()) parts[0] = *options.archOverride;
+            if (options.osOverride.has_value()) parts[2] = *options.osOverride;
+            if (options.abiOverride.has_value()) parts[3] = *options.abiOverride;
+            selectedTargetTriple = parts[0] + "-" + parts[1] + "-" + parts[2] + "-" + parts[3];
+        }
+        const auto parsedTarget = parseTargetTriple(selectedTargetTriple);
+        if (!parsedTarget.has_value()) {
+            throw std::runtime_error("Unsupported target triple syntax: " + selectedTargetTriple);
+        }
+        const auto targetDescription = describeTarget(*parsedTarget);
+        if (!targetDescription.has_value()) {
+            throw std::runtime_error("Target triple is syntactically valid but not yet implemented: " + selectedTargetTriple);
+        }
+
+        const BinaryFormat selectedEmitFormat = options.emitFormat.value_or(BinaryFormat::Pe32Plus);
+        const auto supportsFormat = std::find(targetDescription->supportedFormats.begin(),
+                                              targetDescription->supportedFormats.end(),
+                                              selectedEmitFormat) != targetDescription->supportedFormats.end();
+        if (!supportsFormat) {
+            throw std::runtime_error("Target '" + targetDescription->triple.canonical + "' does not support emit format '" +
+                                     toString(selectedEmitFormat) + "'");
+        }
+
+        const auto callingConvention = callingConventionForTarget(*targetDescription);
+        if (!callingConvention.has_value()) {
+            throw std::runtime_error("Target '" + targetDescription->triple.canonical +
+                                     "' has no implemented ABI descriptor yet");
+        }
+        if (options.sysroot.has_value()) {
+            std::cout << "Using sysroot hint: " << options.sysroot->string() << "\n";
         }
 
         const fs::path& primaryInput = primaryInputPath(options);
@@ -753,8 +995,8 @@ int main(int argc, char** argv) {
 
             if (!options.noLink) {
                 const fs::path executablePath = options.outputPath.value_or(fs::path("a.exe"));
-                const std::string command = compilerCommand(generatedCpp, executablePath);
-                runCommandOrThrow(command, "Native C++ compiler failed");
+                const auto commandArgs = compilerCommandArgs(generatedCpp, executablePath);
+                runCommandOrThrow(commandArgs, "Native C++ compiler failed");
                 std::cout << "Built executable: " << executablePath.string() << "\n";
             }
 
@@ -769,9 +1011,42 @@ int main(int argc, char** argv) {
                 options.inputPaths.size() == 1 ? primaryInput.stem().string() : "multi_module";
             BackendArtifact executableArtifact =
                 compileNativeExecutableArtifact(pipeline.module, moduleName);
-            const fs::path executablePath = options.outputPath.value_or(defaultExecutablePath(primaryInput));
-            writeFile(executablePath, executableArtifact.payload);
-            std::cout << "Built executable: " << executablePath.string() << "\n";
+            const fs::path outputPath = options.outputPath.value_or(defaultFormatPath(primaryInput, selectedEmitFormat));
+
+            if (selectedEmitFormat == BinaryFormat::Pe32Plus) {
+                writeFile(outputPath, executableArtifact.payload);
+            } else {
+                const std::vector<std::uint8_t> payloadBytes(
+                    executableArtifact.payload.begin(),
+                    executableArtifact.payload.end());
+                const auto nativeImage = extractTextImageFromPe(payloadBytes);
+                if (!nativeImage.has_value()) {
+                    throw std::runtime_error("Failed to derive native text image from backend payload");
+                }
+
+                if (selectedEmitFormat == BinaryFormat::RawBin) {
+                    writeFile(outputPath, bytesToRawBinaryString(nativeImage->textBytes));
+                } else if (selectedEmitFormat == BinaryFormat::IntelHex) {
+                    writeFile(outputPath, bytesToIntelHex(nativeImage->textBytes));
+                } else if (selectedEmitFormat == BinaryFormat::SRecord) {
+                    writeFile(outputPath, bytesToSRecord(nativeImage->textBytes));
+                } else if (selectedEmitFormat == BinaryFormat::Elf || selectedEmitFormat == BinaryFormat::MachO) {
+                    if (targetDescription->triple.arch != TargetArch::X64 && targetDescription->triple.arch != TargetArch::Arm64) {
+                        throw std::runtime_error("Native emission for format '" + toString(selectedEmitFormat) +
+                                                 "' currently supports only x86_64 and arm64 targets");
+                    }
+                    writeFile(outputPath, emitExecutableForFormat(*nativeImage, selectedEmitFormat, targetDescription->triple.arch));
+                } else {
+                    throw std::runtime_error(
+                        "Native emission for format '" + toString(selectedEmitFormat) +
+                        "' is not implemented in this backend yet");
+                }
+            }
+
+            std::cout << "Built executable: " << outputPath.string() << "\n";
+            std::cout << "Build metadata: target=" << targetDescription->triple.canonical
+                      << ", abi=" << callingConvention->name
+                      << ", format=" << toString(selectedEmitFormat) << "\n";
             return 0;
         }
 

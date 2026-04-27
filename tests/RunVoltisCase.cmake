@@ -293,6 +293,24 @@ elseif(CASE STREQUAL "valid-default-pe-layout-metadata")
         "6d73766372742e646c6c00")
     set(expected_file_hex_not_contains
         "2e72656c6f630000")
+elseif(CASE STREQUAL "valid-emit-elf-x64")
+    set(source_file "${CASE_DIR}/valid_simple.vlt")
+    set(expected_file "${OUT_DIR}/valid_simple.elf")
+    set(args --target x86_64-pc-linux-gnu --emit elf -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Build metadata: target=x86_64-pc-linux-gnu")
+    set(expected_file_hex_contains
+        "7f454c46")
+elseif(CASE STREQUAL "valid-emit-macho-x64")
+    set(source_file "${CASE_DIR}/valid_simple.vlt")
+    set(expected_file "${OUT_DIR}/valid_simple.macho")
+    set(args --target x86_64-apple-macos-none --emit macho -o "${expected_file}")
+    set(expected_stdout
+        "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
+        "Build metadata: target=x86_64-apple-macos-none")
+    set(expected_file_hex_contains
+        "cffaedfe")
 elseif(CASE STREQUAL "benchmark-mode")
     set(run_without_source TRUE)
     set(args --benchmark)
@@ -535,7 +553,7 @@ if(NOT "${expected_file}" STREQUAL "")
         endforeach()
     endif()
 
-    if(run_emitted)
+    if(run_emitted AND WIN32)
         execute_process(
             COMMAND "${expected_file}"
             RESULT_VARIABLE run_exit

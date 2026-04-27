@@ -2778,7 +2778,6 @@ bool PeX64Backend::supportsOutput(BackendOutputKind output) const {
 }
 
 BackendResult PeX64Backend::compile(const vir::Module& module, const BackendOptions& options) const {
-#ifdef _WIN32
     if (options.output != BackendOutputKind::Executable) {
         BackendResult result;
         result.diagnostics.error({}, "direct pe backend: only executable output is supported");
@@ -2786,11 +2785,6 @@ BackendResult PeX64Backend::compile(const vir::Module& module, const BackendOpti
     }
     WindowsPeX64Emitter emitter(options);
     return emitter.emit(module);
-#else
-    BackendResult result;
-    result.diagnostics.error({}, "direct pe backend: Windows-only backend");
-    return result;
-#endif
 }
 
 std::unique_ptr<IBackend> createPeX64Backend() {
