@@ -50,12 +50,28 @@ Responsibilities:
 - `--emit-vir`: VIR text dump
 - `--emit-llvm`: LLVM IR text output
 - `--bootstrap-cpp`: temporary scaffolding path, not production direction
+- `--list-targets`: show production-ready targets only
+- `--list-all-targets`: show full built-in catalog with readiness labels
 
 ## 5. Target scope
 
-Current implementation is Windows x64 focused for native PE emission. Cross-platform expansion is roadmap work, not current guaranteed behavior.
+Current implementation includes:
 
-## 6. Maturity goals
+- Production: x86_64 targets in the catalog.
+- Experimental: aarch64 targets.
+- Planned: all remaining catalog targets.
+
+Selecting a Planned target is rejected at compile startup; selecting an Experimental target emits a prominent warning.
+
+Default target selection is host-canonical (`canonicalTargetTripleForHost()`), and default emit format is chosen from the selected target's supported format list.
+
+## 6. Toolchain boundaries
+
+- Production-directed native compile path stays in-tree (Voltis backend + in-tree emit utilities).
+- External host toolchains are used only in explicit bootstrap mode (`--bootstrap-cpp`) when linking generated C++.
+- `--emit-llvm` emits text IR from an in-tree backend; it does not invoke host LLVM tools by itself.
+
+## 7. Maturity goals
 
 - broaden backend type/operation coverage
 - improve diagnostics and artifact validation
@@ -64,14 +80,14 @@ Current implementation is Windows x64 focused for native PE emission. Cross-plat
 
 Current status note: Voltis has a working custom linker stage for the currently supported native feature set, but it is not yet a full COFF object/static-library linker.
 
-## 7. Current DLL interop behavior
+## 8. Current DLL interop behavior
 
 - `import` + `extern fn ... from ...;` declarations are lowered into VIR extern metadata.
 - The PE backend binds extern calls through the generated IAT and emits indirect calls (`call [rip+disp32]`) to imported symbols.
 - The LLVM text backend emits `declare` signatures for extern functions and direct call sites using those declarations.
 - The PE linker path resolves native library import names from `.dll`, `.lib`, `.a`, `.so`, and `.dylib` forms into PE import-table DLL targets.
 
-## 8. Linker model and relocation policy
+## 9. Linker model and relocation policy
 
 - The PE backend now tracks explicit linker entities (`LinkObject`, `LinkSection`, `LinkSymbol`, `Relocation`, `ImportSymbol`, `LinkedImage`) in `src/linker_model.h`.
 - Backend code emission and link/layout responsibilities are split: codegen records symbols/relocations first, then a linker pass resolves symbols, validates relocations, assigns RVAs/raw offsets, and emits the final PE.

@@ -279,7 +279,7 @@ elseif(CASE STREQUAL "valid-default-pe-layout-metadata")
     else()
         set(expected_file "${OUT_DIR}/valid_pe_layout_metadata")
     endif()
-    set(args -o "${expected_file}")
+    set(args --target x86_64-pc-windows-msvc --emit pe -o "${expected_file}")
     set(expected_stdout
         "Production-directed pipeline: source -> lexer -> parser -> semantic analysis -> VIR lowering -> backend abstraction."
         "Built executable:")
@@ -375,6 +375,44 @@ elseif(CASE STREQUAL "valid-emit-vir-fold-const-while")
         "ret")
     set(expected_file_not_contains
         "\"never\"")
+elseif(CASE STREQUAL "valid-list-targets")
+    set(run_without_source TRUE)
+    set(args --list-targets)
+    set(expected_stdout
+        "Supported targets"
+        "x86_64-pc-linux-gnu"
+        "x86_64-pc-windows-msvc")
+    set(expected_stderr)
+elseif(CASE STREQUAL "valid-list-all-targets")
+    set(run_without_source TRUE)
+    set(args --list-all-targets)
+    set(expected_stdout
+        "Supported targets"
+        "[EXPERIMENTAL]"
+        "[PLANNED]")
+elseif(CASE STREQUAL "valid-sysroot-import")
+    set(source_file "${CASE_DIR}/valid_sysroot_import.vlt")
+    if(WIN32)
+        set(expected_file "${OUT_DIR}/valid_sysroot_import.exe")
+    else()
+        set(expected_file "${OUT_DIR}/valid_sysroot_import")
+    endif()
+    set(sysroot_dir "${OUT_DIR}/sysroot-fixture")
+    file(MAKE_DIRECTORY "${sysroot_dir}/sdk/include")
+    file(COPY "${CASE_DIR}/sysroot_only_module.vlt" DESTINATION "${sysroot_dir}/sdk/include")
+    set(args --sysroot "${sysroot_dir}" -o "${expected_file}")
+    set(expected_stdout
+        "Using sysroot hint:"
+        "Built executable:")
+elseif(CASE STREQUAL "failure-sysroot-import-missing-without-sysroot")
+    set(source_file "${CASE_DIR}/valid_sysroot_import.vlt")
+    set(expected_exit 1)
+    set(expected_stderr "voltisc error: Source module not found:")
+elseif(CASE STREQUAL "failure-invalid-sysroot")
+    set(source_file "${CASE_DIR}/valid_simple.vlt")
+    set(expected_exit 1)
+    set(args --sysroot "${CASE_DIR}/definitely_missing_sysroot_dir")
+    set(expected_stderr "voltisc error: Invalid --sysroot: path does not exist or is not a directory:")
 elseif(CASE STREQUAL "parser-missing-semicolon")
     set(source_file "${CASE_DIR}/parser_missing_semicolon.vlt")
     set(expected_exit 1)

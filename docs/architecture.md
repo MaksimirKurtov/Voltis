@@ -15,7 +15,7 @@ Voltis source (.vlt)
   -> Typed VIR lowering
   -> VIR optimization + verification
   -> Backend abstraction (IBackend)
-  -> Direct Windows x64 PE executable output (default path)
+  -> Direct native executable output (target + readiness gated)
   -> LLVM IR text (`--emit-llvm`)
 ```
 
@@ -68,7 +68,7 @@ Voltis source (.vlt)
 - broader lowering coverage for full language surface
 - advanced ABI-aware lowering for richer interop/runtime features
 
-### Backend abstraction + LLVM IR emission status
+### Backend abstraction + native/LLVM emission status
 
 **Implemented:**
 
@@ -77,7 +77,9 @@ Voltis source (.vlt)
 - CLI production path uses semantic -> VIR -> backend flow and can emit:
   - LLVM IR text (`--emit-llvm`)
   - native executable (default mode)
-- direct Windows PE backend for self-contained native output
+- direct in-tree PE backend for self-contained native output generation
+- target catalog with readiness metadata (`Production`, `Experimental`, `Planned`) and CLI gating via `--list-targets` / `--list-all-targets`
+- host-canonical default target selection at startup
 - default native path no longer depends on a project runtime static library target
 
 Direct PE backend coverage currently includes `int32`, `float32`, `float64`, `bool`, and `string` for the supported example and test paths.
@@ -92,9 +94,10 @@ Direct PE backend coverage currently includes `int32`, `float32`, `float64`, `bo
 
 Current repository can produce native executables from Voltis without C++ transpilation. Remaining milestones are:
 
-1. Harden the direct PE backend coverage for more types and operations.
-2. Add explicit linker strategy controls (`lld-link`/`link.exe`) and import-library/DLL workflow controls.
-3. Add optimization passes and richer backend validation coverage.
+1. Replace PE-extraction wrappers for ELF/Mach-O with full writers (sections, relocations, symbols, imports).
+2. Harden direct backend coverage for more types and operations and complete AArch64 native codegen.
+3. Add explicit linker strategy controls and richer import-library/DLL workflow controls.
+4. Add optimization passes and richer backend validation coverage.
 
 Bootstrap C++ mode remains temporary scaffolding and is not required for the default production-directed compile path.
 
@@ -106,7 +109,7 @@ Whitepaper target pipeline remains:
 Lexer -> Parser -> AST -> Semantic analysis -> Typed IR -> Optimization -> Backend lowering -> Object generation -> Link -> PE output
 ```
 
-Current branch is aligned directionally and now includes first native object/executable generation through the production-directed pipeline, with backend/linker hardening still in progress.
+Current branch is aligned directionally and includes production x86_64 target support plus experimental target scaffolding, with backend/linker hardening still in progress.
 
 ## 5) Implemented syntax subset guard (docs/examples)
 

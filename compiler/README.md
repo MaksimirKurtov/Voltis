@@ -9,4 +9,9 @@ Current implementation paths used by CMake:
 - source: [`../src`](../src)
 - tests: [`../tests`](../tests)
 
+Current CLI target discovery:
+
+- `--list-targets`: production-ready targets only
+- `--list-all-targets`: complete built-in catalog with readiness labels
+
 As the repository evolves, implementation components may be progressively consolidated under this directory while preserving build stability.

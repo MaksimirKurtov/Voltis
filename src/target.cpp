@@ -4,6 +4,9 @@
 #include <array>
 #include <cctype>
 #include <sstream>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 
 namespace {
 
@@ -54,7 +57,7 @@ std::optional<TargetOs> parseOs(const std::string& text) {
     const std::string t = lower(text);
     if (t == "windows" || t == "win32") return TargetOs::Windows;
     if (t == "linux") return TargetOs::Linux;
-    if (t == "macos" || t == "darwin") return TargetOs::MacOS;
+    if (t == "macos" || t == "darwin" || t.rfind("macos", 0) == 0) return TargetOs::MacOS;
     if (t == "none" || t == "baremetal") return TargetOs::BareMetal;
     return std::nullopt;
 }
@@ -133,7 +136,8 @@ TargetDescription makeTarget(TargetArch arch,
                              std::uint32_t stackAlign,
                              std::string cc,
                              std::vector<std::string> ext,
-                             std::vector<BinaryFormat> formats) {
+                             std::vector<BinaryFormat> formats,
+                             BackendReadiness readiness) {
     TargetDescription desc;
     desc.triple.arch = arch;
     desc.triple.vendor = vendor;
@@ -146,6 +150,7 @@ TargetDescription makeTarget(TargetArch arch,
     desc.callingConvention = std::move(cc);
     desc.isaExtensions = std::move(ext);
     desc.supportedFormats = std::move(formats);
+    desc.readiness = readiness;
     return desc;
 }
 
@@ -153,46 +158,46 @@ const std::vector<TargetDescription>& builtinTargets() {
     static const std::vector<TargetDescription> targets = {
         makeTarget(TargetArch::X64, TargetVendor::Pc, TargetOs::Windows, TargetAbi::Msvc,
                    Endianness::Little, 64, 16, "ms_x64_abi",
-                   {"sse2", "avx"}, {BinaryFormat::Pe32Plus}),
+                   {"sse2", "avx"}, {BinaryFormat::Pe32Plus}, BackendReadiness::Production),
         makeTarget(TargetArch::X86, TargetVendor::Pc, TargetOs::Windows, TargetAbi::Msvc,
                    Endianness::Little, 32, 16, "__stdcall/__fastcall/cdecl",
-                   {"sse2"}, {BinaryFormat::Pe32Plus}),
+                   {"sse2"}, {BinaryFormat::Pe32Plus}, BackendReadiness::Planned),
         makeTarget(TargetArch::Arm64, TargetVendor::Pc, TargetOs::Windows, TargetAbi::Msvc,
                    Endianness::Little, 64, 16, "aapcs64_windows",
-                   {}, {BinaryFormat::Pe32Plus}),
+                   {}, {BinaryFormat::Pe32Plus}, BackendReadiness::Experimental),
         makeTarget(TargetArch::X64, TargetVendor::Apple, TargetOs::MacOS, TargetAbi::None,
                    Endianness::Little, 64, 16, "sysv_amd64",
-                   {}, {BinaryFormat::MachO}),
+                   {}, {BinaryFormat::MachO}, BackendReadiness::Production),
         makeTarget(TargetArch::Arm64, TargetVendor::Apple, TargetOs::MacOS, TargetAbi::None,
                    Endianness::Little, 64, 16, "aapcs64",
-                   {}, {BinaryFormat::MachO}),
+                   {}, {BinaryFormat::MachO}, BackendReadiness::Experimental),
         makeTarget(TargetArch::X64, TargetVendor::Pc, TargetOs::Linux, TargetAbi::Gnu,
                    Endianness::Little, 64, 16, "sysv_amd64",
-                   {}, {BinaryFormat::Elf}),
+                   {}, {BinaryFormat::Elf}, BackendReadiness::Production),
         makeTarget(TargetArch::X86, TargetVendor::Pc, TargetOs::Linux, TargetAbi::Gnu,
                    Endianness::Little, 32, 16, "sysv_i386",
-                   {}, {BinaryFormat::Elf}),
+                   {}, {BinaryFormat::Elf}, BackendReadiness::Planned),
         makeTarget(TargetArch::Arm64, TargetVendor::Pc, TargetOs::Linux, TargetAbi::Gnu,
                    Endianness::Little, 64, 16, "aapcs64",
-                   {}, {BinaryFormat::Elf}),
+                   {}, {BinaryFormat::Elf}, BackendReadiness::Experimental),
         makeTarget(TargetArch::Armv7, TargetVendor::Pc, TargetOs::Linux, TargetAbi::Eabihf,
                    Endianness::Little, 32, 8, "aapcs",
-                   {"thumb2"}, {BinaryFormat::Elf}),
+                   {"thumb2"}, {BinaryFormat::Elf}, BackendReadiness::Planned),
         makeTarget(TargetArch::Riscv64, TargetVendor::Pc, TargetOs::Linux, TargetAbi::Gnu,
                    Endianness::Little, 64, 16, "riscv_lp64",
-                   {}, {BinaryFormat::Elf}),
+                   {}, {BinaryFormat::Elf}, BackendReadiness::Planned),
         makeTarget(TargetArch::Riscv32, TargetVendor::None, TargetOs::BareMetal, TargetAbi::Eabi,
                    Endianness::Little, 32, 16, "riscv_ilp32",
-                   {"m", "c"}, {BinaryFormat::Elf, BinaryFormat::RawBin, BinaryFormat::IntelHex, BinaryFormat::SRecord}),
+                   {"m", "c"}, {BinaryFormat::Elf, BinaryFormat::RawBin, BinaryFormat::IntelHex, BinaryFormat::SRecord}, BackendReadiness::Planned),
         makeTarget(TargetArch::Armv7, TargetVendor::None, TargetOs::BareMetal, TargetAbi::Eabi,
                    Endianness::Little, 32, 8, "aapcs",
-                   {"thumb2"}, {BinaryFormat::Elf, BinaryFormat::RawBin, BinaryFormat::IntelHex, BinaryFormat::SRecord}),
+                   {"thumb2"}, {BinaryFormat::Elf, BinaryFormat::RawBin, BinaryFormat::IntelHex, BinaryFormat::SRecord}, BackendReadiness::Planned),
         makeTarget(TargetArch::Xtensa, TargetVendor::None, TargetOs::BareMetal, TargetAbi::Eabi,
                    Endianness::Little, 32, 16, "xtensa_call0",
-                   {}, {BinaryFormat::Elf, BinaryFormat::RawBin}),
+                   {}, {BinaryFormat::Elf, BinaryFormat::RawBin}, BackendReadiness::Planned),
         makeTarget(TargetArch::Avr, TargetVendor::None, TargetOs::BareMetal, TargetAbi::Eabi,
                    Endianness::Little, 16, 2, "avr_abi",
-                   {}, {BinaryFormat::Elf, BinaryFormat::IntelHex})
+                   {}, {BinaryFormat::Elf, BinaryFormat::IntelHex}, BackendReadiness::Planned)
     };
     return targets;
 }
@@ -259,10 +264,30 @@ std::vector<TargetDescription> listSupportedTargets() {
 }
 
 std::string canonicalTargetTripleForHost() {
-#ifdef _WIN32
+#if defined(_WIN32)
+#if defined(__aarch64__) || defined(_M_ARM64)
+    return "aarch64-pc-windows-msvc";
+#elif defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
     return "x86_64-pc-windows-msvc";
-#elif __APPLE__
+#else
+    return "x86_64-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__) && defined(TARGET_OS_MAC) && TARGET_OS_MAC
+#if defined(__aarch64__) || defined(__arm64__)
+    return "aarch64-apple-macos-none";
+#elif defined(__x86_64__)
     return "x86_64-apple-macos-none";
+#else
+    return "x86_64-apple-macos-none";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "aarch64-pc-linux-gnu";
+#elif defined(__x86_64__)
+    return "x86_64-pc-linux-gnu";
+#else
+    return "x86_64-pc-linux-gnu";
+#endif
 #else
     return "x86_64-pc-linux-gnu";
 #endif

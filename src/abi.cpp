@@ -1,12 +1,23 @@
 #include "abi.h"
 
+#include <algorithm>
+#include <cctype>
 #include <utility>
 
 namespace {
 
+std::string lowerAscii(std::string_view value) {
+    std::string out(value);
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return out;
+}
+
 CallingConventionDescriptor msX64() {
     return CallingConventionDescriptor{
-        "ms_x64_abi",
+        CallingConvention::MicrosoftX64,
+        std::string(callingConventionName(CallingConvention::MicrosoftX64)),
         {"rcx", "rdx", "r8", "r9"},
         {"xmm0", "xmm1", "xmm2", "xmm3"},
         "rax",
@@ -20,7 +31,8 @@ CallingConventionDescriptor msX64() {
 
 CallingConventionDescriptor sysvAmd64() {
     return CallingConventionDescriptor{
-        "sysv_amd64",
+        CallingConvention::SystemVAMD64,
+        std::string(callingConventionName(CallingConvention::SystemVAMD64)),
         {"rdi", "rsi", "rdx", "rcx", "r8", "r9"},
         {"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"},
         "rax",
@@ -34,6 +46,7 @@ CallingConventionDescriptor sysvAmd64() {
 
 CallingConventionDescriptor msX86() {
     return CallingConventionDescriptor{
+        CallingConvention::Win32Cdecl,  // umbrella: covers cdecl/stdcall/fastcall dispatch
         "__stdcall/__fastcall/cdecl",
         {"ecx", "edx"},
         {},
@@ -48,6 +61,7 @@ CallingConventionDescriptor msX86() {
 
 CallingConventionDescriptor sysvI386() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "sysv_i386",
         {},
         {},
@@ -62,7 +76,8 @@ CallingConventionDescriptor sysvI386() {
 
 CallingConventionDescriptor aapcs64() {
     return CallingConventionDescriptor{
-        "aapcs64",
+        CallingConvention::AArch64AAPCS,
+        std::string(callingConventionName(CallingConvention::AArch64AAPCS)),
         {"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"},
         {"v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"},
         "x0",
@@ -76,6 +91,7 @@ CallingConventionDescriptor aapcs64() {
 
 CallingConventionDescriptor aapcs32() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "aapcs",
         {"r0", "r1", "r2", "r3"},
         {"s0", "s1", "s2", "s3"},
@@ -90,6 +106,7 @@ CallingConventionDescriptor aapcs32() {
 
 CallingConventionDescriptor riscvLp64() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "riscv_lp64",
         {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"},
         {"fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7"},
@@ -111,6 +128,7 @@ CallingConventionDescriptor riscvIlp32() {
 
 CallingConventionDescriptor mipsO32() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "mips_o32",
         {"$a0", "$a1", "$a2", "$a3"},
         {"$f12", "$f14"},
@@ -125,6 +143,7 @@ CallingConventionDescriptor mipsO32() {
 
 CallingConventionDescriptor avrAbi() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "avr_abi",
         {"r24", "r22", "r20", "r18"},
         {},
@@ -139,6 +158,7 @@ CallingConventionDescriptor avrAbi() {
 
 CallingConventionDescriptor ppc64ElfV2() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "ppc64_elfv2",
         {"r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"},
         {"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", "f13"},
@@ -153,6 +173,7 @@ CallingConventionDescriptor ppc64ElfV2() {
 
 CallingConventionDescriptor s390xElfAbi() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "s390x_elf",
         {"r2", "r3", "r4", "r5", "r6"},
         {"f0", "f2", "f4", "f6"},
@@ -167,6 +188,7 @@ CallingConventionDescriptor s390xElfAbi() {
 
 CallingConventionDescriptor xtensaCall0() {
     return CallingConventionDescriptor{
+        CallingConvention::Unknown,
         "xtensa_call0",
         {"a2", "a3", "a4", "a5", "a6", "a7"},
         {},
@@ -180,6 +202,30 @@ CallingConventionDescriptor xtensaCall0() {
 }
 
 } // namespace
+
+CallingConvention parseCallingConvention(std::string_view name) {
+    const std::string lowered = lowerAscii(name);
+    if (lowered == "microsoft_x64" || lowered == "ms_x64_abi") return CallingConvention::MicrosoftX64;
+    if (lowered == "systemv_amd64" || lowered == "sysv_amd64") return CallingConvention::SystemVAMD64;
+    if (lowered == "win32_cdecl" || lowered == "cdecl" || lowered == "__cdecl") return CallingConvention::Win32Cdecl;
+    if (lowered == "win32_stdcall" || lowered == "__stdcall" || lowered == "stdcall") return CallingConvention::Win32Stdcall;
+    if (lowered == "win32_fastcall" || lowered == "__fastcall" || lowered == "fastcall") return CallingConvention::Win32Fastcall;
+    if (lowered == "aarch64_aapcs" || lowered == "aapcs64" || lowered == "aapcs64_windows") return CallingConvention::AArch64AAPCS;
+    return CallingConvention::Unknown;
+}
+
+std::string_view callingConventionName(CallingConvention cc) {
+    switch (cc) {
+        case CallingConvention::MicrosoftX64: return "microsoft_x64";
+        case CallingConvention::SystemVAMD64: return "systemv_amd64";
+        case CallingConvention::Win32Cdecl: return "win32_cdecl";
+        case CallingConvention::Win32Stdcall: return "win32_stdcall";
+        case CallingConvention::Win32Fastcall: return "win32_fastcall";
+        case CallingConvention::AArch64AAPCS: return "aarch64_aapcs";
+        case CallingConvention::Unknown: return "unknown";
+    }
+    return "unknown";
+}
 
 std::optional<CallingConventionDescriptor> callingConventionForTarget(const TargetDescription& target) {
     switch (target.triple.arch) {

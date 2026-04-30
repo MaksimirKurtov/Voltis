@@ -3,6 +3,7 @@
 #include "abi.h"
 #include "binary_emit_utils.h"
 #include "executable_format_emit_utils.h"
+#include "file_utils.h"
 #include "codegen.h"
 #include "import_utils.h"
 #include "lexer.h"
@@ -10,6 +11,7 @@
 #include "parser.h"
 #include "sema.h"
 #include "target.h"
+#include "target_capability_registry.h"
 #include "vir.h"
 #include "vir_passes.h"
 #include <algorithm>
@@ -58,11 +60,7 @@ static std::string readFile(const fs::path& path) {
 }
 
 static void writeFile(const fs::path& path, const std::string& data) {
-    std::ofstream output(path, std::ios::binary);
-    if (!output) {
-        throw std::runtime_error("Could not write output file: " + path.string());
-    }
-    output << data;
+    safeWriteFile(path, data);
 }
 
 static std::vector<std::string> compilerCommandArgs(const fs::path& cppFile, const fs::path& outputFile) {
@@ -167,6 +165,11 @@ struct CliOptions {
     std::optional<fs::path> sysroot;
     std::optional<BinaryFormat> emitFormat;
     bool listTargets = false;
+    bool listAllTargets = false;
+};
+
+struct CompilerConfig {
+    std::optional<fs::path> sysroot;
 };
 
 static fs::path defaultArtifactPath(const fs::path& inputPath, const std::string& extension) {
@@ -209,7 +212,7 @@ static const fs::path& primaryInputPath(const CliOptions& options) {
 static void printUsage() {
     std::cout << "voltisc <input.vlt> [more_inputs.vlt ...] [options]\n"
               << "voltisc --benchmark [-o <benchmark.exe>]\n"
-              << "Default: native compile to a Windows x64 PE executable.\n"
+              << "Default: native compile for the host canonical target triple.\n"
               << "Options:\n"
               << "  -o <path>          Output artifact path (single artifact mode or default executable)\n"
               << "  --benchmark        Run embedded benchmark compile+execute mode\n"
@@ -224,7 +227,8 @@ static void printUsage() {
               << "  --abi <abi>        Override target ABI segment\n"
               << "  --sysroot <path>   Target sysroot path hint\n"
               << "  --emit <format>    pe|elf|macho|bin|hex|srec\n"
-              << "  --list-targets     Print supported built-in targets\n";
+              << "  --list-targets     Print production-ready built-in targets\n"
+              << "  --list-all-targets Print all built-in targets with readiness labels\n";
 }
 
 static CliOptions parseCliOptions(int argc, char** argv) {
@@ -251,6 +255,10 @@ static CliOptions parseCliOptions(int argc, char** argv) {
         }
         if (arg == "--list-targets") {
             options.listTargets = true;
+            continue;
+        }
+        if (arg == "--list-all-targets") {
+            options.listAllTargets = true;
             continue;
         }
         if (arg == "--target") {
@@ -322,12 +330,12 @@ static CliOptions parseCliOptions(int argc, char** argv) {
         throw std::runtime_error("Unknown argument: " + arg);
     }
 
-    if (options.listTargets) {
+    if (options.listTargets || options.listAllTargets) {
         if (!options.inputPaths.empty() || options.outputPath.has_value() || options.emitVir || options.emitLlvm ||
             options.bootstrapCpp || options.emitCppPath.has_value() || options.noLink || options.targetTriple.has_value() ||
             options.archOverride.has_value() || options.osOverride.has_value() || options.abiOverride.has_value() ||
             options.sysroot.has_value() || options.emitFormat.has_value() || options.benchmark) {
-            throw std::runtime_error("--list-targets cannot be combined with other options");
+            throw std::runtime_error("--list-targets/--list-all-targets cannot be combined with other options");
         }
         return options;
     }
@@ -372,12 +380,30 @@ static CliOptions parseCliOptions(int argc, char** argv) {
     return options;
 }
 
-static void printSupportedTargets() {
+static std::string readinessLabel(BackendReadiness readiness) {
+    switch (readiness) {
+        case BackendReadiness::Production: return "";
+        case BackendReadiness::Experimental: return " [EXPERIMENTAL]";
+        case BackendReadiness::Planned: return " [PLANNED]";
+    }
+    return "";
+}
+
+static void printSupportedTargets(bool includeAll) {
     const auto targets = listSupportedTargets();
-    std::cout << "Supported targets (" << targets.size() << "):\n";
+    std::size_t printed = 0;
     for (const auto& target : targets) {
+        if (includeAll || target.readiness == BackendReadiness::Production) {
+            ++printed;
+        }
+    }
+    std::cout << "Supported targets (" << printed << "):\n";
+    for (const auto& target : targets) {
+        if (!includeAll && target.readiness != BackendReadiness::Production) {
+            continue;
+        }
         std::cout << "  " << target.triple.canonical << "  ptr" << target.pointerWidth
-                  << "  cc=" << target.callingConvention << "  formats=";
+                  << readinessLabel(target.readiness) << "  cc=" << target.callingConvention << "  formats=";
         for (std::size_t i = 0; i < target.supportedFormats.size(); ++i) {
             if (i > 0) {
                 std::cout << ",";
@@ -466,7 +492,43 @@ static Program mergePrograms(std::vector<Program>&& programs) {
     return merged;
 }
 
-static void loadProgramRecursive(const fs::path& modulePath, ModuleBuildState& state) {
+static fs::path resolveImportPath(const fs::path& baseDir, const std::string& importPath, const CompilerConfig& config) {
+    const fs::path path(importPath);
+    if (path.is_absolute()) {
+        return resolveCanonical(path);
+    }
+    if (config.sysroot.has_value()) {
+        const fs::path sysrootCandidate = resolveCanonical(*config.sysroot / path.relative_path());
+        if (fs::exists(sysrootCandidate)) {
+            return sysrootCandidate;
+        }
+    }
+    return resolveCanonical(baseDir / path);
+}
+
+static std::string resolveRuntimeImportPath(const std::string& importPath, const CompilerConfig& config) {
+    if (!config.sysroot.has_value()) {
+        return importPath;
+    }
+    const fs::path original(importPath);
+    if (original.is_absolute()) {
+        return importPath;
+    }
+    const std::array<fs::path, 3> searchDirs = {
+        *config.sysroot / "lib",
+        *config.sysroot / "usr/lib",
+        *config.sysroot / "usr/local/lib"
+    };
+    for (const auto& dir : searchDirs) {
+        const fs::path candidate = dir / original.filename();
+        if (fs::exists(candidate)) {
+            return candidate.lexically_normal().string();
+        }
+    }
+    return importPath;
+}
+
+static void loadProgramRecursive(const fs::path& modulePath, ModuleBuildState& state, const CompilerConfig& config) {
     const fs::path canonicalPath = resolveCanonical(modulePath);
     const std::string key = normalizedKey(canonicalPath);
     if (state.loaded.find(key) != state.loaded.end()) {
@@ -494,10 +556,12 @@ static void loadProgramRecursive(const fs::path& modulePath, ModuleBuildState& s
 
     for (const auto& importDecl : parsed.imports) {
         if (isSourceModuleImportPath(importDecl.path)) {
-            const fs::path childPath = resolveCanonical(canonicalPath.parent_path() / fs::path(importDecl.path));
-            loadProgramRecursive(childPath, state);
+            const fs::path childPath = resolveImportPath(canonicalPath.parent_path(), importDecl.path, config);
+            loadProgramRecursive(childPath, state, config);
         } else {
-            runtimeImports.push_back(importDecl);
+            ImportDecl updated = importDecl;
+            updated.path = resolveRuntimeImportPath(importDecl.path, config);
+            runtimeImports.push_back(std::move(updated));
         }
     }
     parsed.imports = std::move(runtimeImports);
@@ -508,14 +572,14 @@ static void loadProgramRecursive(const fs::path& modulePath, ModuleBuildState& s
     state.loaded.insert(key);
 }
 
-static Program buildProgramFromEntryFiles(const std::vector<fs::path>& entryFilePaths) {
+static Program buildProgramFromEntryFiles(const std::vector<fs::path>& entryFilePaths, const CompilerConfig& config) {
     if (entryFilePaths.empty()) {
         throw std::runtime_error("No input .vlt file supplied");
     }
 
     ModuleBuildState state;
     for (const auto& entryFilePath : entryFilePaths) {
-        loadProgramRecursive(entryFilePath, state);
+        loadProgramRecursive(entryFilePath, state, config);
     }
     return mergePrograms(std::move(state.programsInDependencyOrder));
 }
@@ -920,8 +984,8 @@ int main(int argc, char** argv) {
 
         const CliOptions options = parseCliOptions(argc, argv);
 
-        if (options.listTargets) {
-            printSupportedTargets();
+        if (options.listTargets || options.listAllTargets) {
+            printSupportedTargets(options.listAllTargets);
             return 0;
         }
 
@@ -929,9 +993,15 @@ int main(int argc, char** argv) {
             return runBenchmarkMode(options);
         }
 
-        std::string selectedTargetTriple = options.targetTriple.value_or("x86_64-pc-windows-msvc");
+        CompilerConfig config;
+        config.sysroot = options.sysroot;
+        if (config.sysroot.has_value() && (!fs::exists(*config.sysroot) || !fs::is_directory(*config.sysroot))) {
+            throw std::runtime_error("Invalid --sysroot: path does not exist or is not a directory: " + config.sysroot->string());
+        }
+
+        std::string selectedTargetTriple = options.targetTriple.value_or(canonicalTargetTripleForHost());
         if (options.archOverride.has_value() || options.osOverride.has_value() || options.abiOverride.has_value()) {
-            std::array<std::string, 4> parts = {"x86_64", "pc", "windows", "msvc"};
+            std::array<std::string, 4> parts = {"", "", "", ""};
             std::size_t idx = 0;
             std::string current;
             for (char ch : selectedTargetTriple) {
@@ -961,10 +1031,21 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Target triple is syntactically valid but not yet implemented: " + selectedTargetTriple);
         }
 
-        const BinaryFormat selectedEmitFormat = options.emitFormat.value_or(BinaryFormat::Pe32Plus);
-        const auto supportsFormat = std::find(targetDescription->supportedFormats.begin(),
-                                              targetDescription->supportedFormats.end(),
-                                              selectedEmitFormat) != targetDescription->supportedFormats.end();
+        const BackendReadiness readiness = TargetCapabilityRegistry::readinessFor(*parsedTarget);
+        if (readiness == BackendReadiness::Planned) {
+            throw std::runtime_error("Target '" + targetDescription->triple.canonical + "' is planned but not yet implemented.");
+        }
+        if (readiness == BackendReadiness::Experimental) {
+            std::cerr << "Warning: target " << targetDescription->triple.canonical
+                      << " is experimental. Output may be non-functional.\n";
+        }
+
+        const auto supportedFormats = TargetCapabilityRegistry::supportedFormatsFor(*parsedTarget);
+        if (supportedFormats.empty()) {
+            throw std::runtime_error("Target '" + targetDescription->triple.canonical + "' has no supported emit formats");
+        }
+        const BinaryFormat selectedEmitFormat = options.emitFormat.value_or(supportedFormats.front());
+        const bool supportsFormat = TargetCapabilityRegistry::supportsFormat(*parsedTarget, selectedEmitFormat);
         if (!supportsFormat) {
             throw std::runtime_error("Target '" + targetDescription->triple.canonical + "' does not support emit format '" +
                                      toString(selectedEmitFormat) + "'");
@@ -980,7 +1061,7 @@ int main(int argc, char** argv) {
         }
 
         const fs::path& primaryInput = primaryInputPath(options);
-        Program program = buildProgramFromEntryFiles(options.inputPaths);
+        Program program = buildProgramFromEntryFiles(options.inputPaths, config);
         FrontendPipelineResult pipeline = runFrontendPipeline(std::move(program));
 
         if (options.bootstrapCpp) {
@@ -1031,10 +1112,6 @@ int main(int argc, char** argv) {
                 } else if (selectedEmitFormat == BinaryFormat::SRecord) {
                     writeFile(outputPath, bytesToSRecord(nativeImage->textBytes));
                 } else if (selectedEmitFormat == BinaryFormat::Elf || selectedEmitFormat == BinaryFormat::MachO) {
-                    if (targetDescription->triple.arch != TargetArch::X64 && targetDescription->triple.arch != TargetArch::Arm64) {
-                        throw std::runtime_error("Native emission for format '" + toString(selectedEmitFormat) +
-                                                 "' currently supports only x86_64 and arm64 targets");
-                    }
                     writeFile(outputPath, emitExecutableForFormat(*nativeImage, selectedEmitFormat, targetDescription->triple.arch));
                 } else {
                     throw std::runtime_error(
