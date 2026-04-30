@@ -28,18 +28,13 @@ fs::path makeTempPathNear(const fs::path& outPath) {
 #ifndef _WIN32
 void writePosixFile(const fs::path& path, const std::vector<std::uint8_t>& data) {
     constexpr mode_t kMode = 0644;
-    const int flags = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW;
+    // Temp file names are unique (timestamp nonce), so O_TRUNC is safe and
+    // avoids the TOCTOU race of the O_EXCL + remove + retry pattern.
+    const int flags = O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW;
 
-    int fd = ::open(path.c_str(), flags, kMode);
+    const int fd = ::open(path.c_str(), flags, kMode);
     if (fd < 0) {
-        if (errno == EEXIST || errno == ELOOP) {
-            std::error_code ignored;
-            fs::remove(path, ignored);
-            fd = ::open(path.c_str(), flags, kMode);
-        }
-    }
-    if (fd < 0) {
-        throw std::runtime_error("Could not safely open output file: " + path.string());
+        throw std::runtime_error("Could not open temp output file: " + path.string());
     }
 
     std::size_t written = 0;
@@ -109,11 +104,17 @@ void safeWriteFile(const fs::path& outPath, const std::vector<std::uint8_t>& dat
     fs::create_directories(dir, ec);
 
     const fs::path tmpPath = makeTempPathNear(outPath);
+    try {
 #ifdef _WIN32
-    writeWindowsFile(tmpPath, data);
+        writeWindowsFile(tmpPath, data);
 #else
-    writePosixFile(tmpPath, data);
+        writePosixFile(tmpPath, data);
 #endif
+    } catch (...) {
+        std::error_code ignored;
+        fs::remove(tmpPath, ignored);
+        throw;
+    }
 
     fs::rename(tmpPath, outPath, ec);
     if (ec) {

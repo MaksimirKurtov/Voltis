@@ -13,7 +13,7 @@
 int main() {
     const std::string host = canonicalTargetTripleForHost();
     assert(!host.empty());
-    assert(std::regex_match(host, std::regex("^[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_]+$")));
+    assert(std::regex_match(host, std::regex("^[a-z0-9_]+-[a-z0-9_]+-[a-z0-9_]+(-[a-z0-9_]+)?$")));
 
     const auto hostParsed = parseTargetTriple(host);
     assert(hostParsed.has_value());

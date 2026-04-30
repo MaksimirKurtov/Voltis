@@ -274,11 +274,11 @@ std::string canonicalTargetTripleForHost() {
 #endif
 #elif defined(__APPLE__) && defined(TARGET_OS_MAC) && TARGET_OS_MAC
 #if defined(__aarch64__) || defined(__arm64__)
-    return "aarch64-apple-macos12";
+    return "aarch64-apple-macos-none";
 #elif defined(__x86_64__)
-    return "x86_64-apple-macos12";
+    return "x86_64-apple-macos-none";
 #else
-    return "x86_64-apple-macos12";
+    return "x86_64-apple-macos-none";
 #endif
 #elif defined(__linux__)
 #if defined(__aarch64__)

@@ -64,7 +64,7 @@ std::vector<std::uint8_t> ELFWriter::writeExecutable(const NativeProgramImage& i
     eh.e_ident[0] = 0x7F; eh.e_ident[1] = 'E'; eh.e_ident[2] = 'L'; eh.e_ident[3] = 'F';
     eh.e_ident[4] = 2; eh.e_ident[5] = 1; eh.e_ident[6] = 1;
     eh.e_type = pie_ ? 3 : 2; // ET_DYN / ET_EXEC
-    eh.e_machine = 0x3E;
+    eh.e_machine = (arch_ == TargetArch::Arm64) ? 0xB7 : 0x3E; // EM_AARCH64 / EM_X86_64
     eh.e_version = 1;
     eh.e_entry = baseVaddr + textOffset + image.entryOffset;
     eh.e_phoff = sizeof(Elf64_EhdrLocal);

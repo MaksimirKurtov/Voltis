@@ -154,7 +154,7 @@ std::string emitExecutableForFormat(const NativeProgramImage& image,
         case BinaryFormat::Pe32Plus:
             throw std::runtime_error("Internal error: PE emission must use direct backend payload");
         case BinaryFormat::Elf:
-            bytes = ELFWriter(true).writeExecutable(image);
+            bytes = ELFWriter(arch, true).writeExecutable(image);
             break;
         case BinaryFormat::MachO:
             if (arch != TargetArch::X64 && arch != TargetArch::Arm64) {

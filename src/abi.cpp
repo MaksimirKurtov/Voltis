@@ -46,8 +46,8 @@ CallingConventionDescriptor sysvAmd64() {
 
 CallingConventionDescriptor msX86() {
     return CallingConventionDescriptor{
-        CallingConvention::Win32Cdecl,
-        std::string(callingConventionName(CallingConvention::Win32Cdecl)),
+        CallingConvention::Win32Cdecl,  // umbrella: covers cdecl/stdcall/fastcall dispatch
+        "__stdcall/__fastcall/cdecl",
         {"ecx", "edx"},
         {},
         "eax",

@@ -1001,7 +1001,7 @@ int main(int argc, char** argv) {
 
         std::string selectedTargetTriple = options.targetTriple.value_or(canonicalTargetTripleForHost());
         if (options.archOverride.has_value() || options.osOverride.has_value() || options.abiOverride.has_value()) {
-            std::array<std::string, 4> parts = {"x86_64", "pc", "linux", "gnu"};
+            std::array<std::string, 4> parts = {"", "", "", ""};
             std::size_t idx = 0;
             std::string current;
             for (char ch : selectedTargetTriple) {
