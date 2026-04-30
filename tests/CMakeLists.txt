@@ -42,6 +42,11 @@ add_voltis_case(voltis.valid.emit_vir_conversions valid-emit-vir-conversions)
 add_voltis_case(voltis.valid.emit_vir_import_angle valid-emit-vir-import-angle)
 add_voltis_case(voltis.valid.emit_vir_fold_const_if valid-emit-vir-fold-const-if)
 add_voltis_case(voltis.valid.emit_vir_fold_const_while valid-emit-vir-fold-const-while)
+add_voltis_case(voltis.valid.list_targets valid-list-targets)
+add_voltis_case(voltis.valid.list_all_targets valid-list-all-targets)
+add_voltis_case(voltis.valid.sysroot_import valid-sysroot-import)
+add_voltis_case(voltis.failure.sysroot_import_without_sysroot failure-sysroot-import-missing-without-sysroot)
+add_voltis_case(voltis.failure.invalid_sysroot failure-invalid-sysroot)
 add_voltis_case(voltis.failure.parser_missing_semicolon parser-missing-semicolon)
 add_voltis_case(voltis.failure.undefined_symbol sema-undefined-symbol)
 add_voltis_case(voltis.failure.undefined_function sema-undefined-function)
@@ -63,3 +68,17 @@ add_voltis_case(voltis.failure.extern_missing_import sema-extern-missing-import)
 add_voltis_case(voltis.failure.duplicate_import sema-duplicate-import)
 add_voltis_case(voltis.failure.source_import_missing_file source-import-missing-file)
 add_voltis_case(voltis.failure.source_import_cycle source-import-cycle)
+
+add_executable(voltis_unit_tests
+    unit_tests.cpp
+    ../src/target.cpp
+    ../src/abi.cpp
+    ../src/file_utils.cpp
+    ../src/target_capability_registry.cpp
+)
+target_include_directories(voltis_unit_tests PRIVATE ../src)
+add_test(NAME voltis.unit.core COMMAND voltis_unit_tests)
+
+# CI note:
+# - Runtime execution checks are only enabled on native Windows runners in RunVoltisCase.cmake.
+# - Cross-platform structural validation (ELF/Mach-O magic/header checks) can run on non-native hosts.

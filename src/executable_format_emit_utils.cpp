@@ -1,4 +1,6 @@
 #include "executable_format_emit_utils.h"
+#include "emit/elf_writer.h"
+#include "emit/macho_writer.h"
 
 #include <algorithm>
 #include <array>
@@ -50,130 +52,40 @@ std::size_t alignUp(std::size_t value, std::size_t alignment) {
     return remainder == 0 ? value : value + (alignment - remainder);
 }
 
-std::vector<std::uint8_t> emitElf64Executable(const NativeProgramImage& image, TargetArch arch) {
-    const std::uint16_t machine = (arch == TargetArch::X64) ? 0x3E : 0xB7; // EM_X86_64 / EM_AARCH64
-    const std::uint64_t baseVaddr = 0x400000;
-    const std::size_t headerSize = 64 + 56;
-    const std::size_t codeOffset = alignUp(headerSize, 0x1000);
-    const std::uint64_t entry = baseVaddr + static_cast<std::uint64_t>(codeOffset) + image.entryOffset;
-
-    std::vector<std::uint8_t> out;
-    out.reserve(codeOffset + image.textBytes.size());
-
-    out.push_back(0x7F);
-    out.push_back('E');
-    out.push_back('L');
-    out.push_back('F');
-    out.push_back(2); // 64-bit
-    out.push_back(1); // little-endian
-    out.push_back(1); // version
-    out.push_back(0); // sysv
-    out.insert(out.end(), 8, 0);
-
-    appendU16(out, 2); // ET_EXEC
-    appendU16(out, machine);
-    appendU32(out, 1);
-    appendU64(out, entry);
-    appendU64(out, 64); // phoff
-    appendU64(out, 0);  // shoff
-    appendU32(out, 0);
-    appendU16(out, 64);
-    appendU16(out, 56);
-    appendU16(out, 1);
-    appendU16(out, 0);
-    appendU16(out, 0);
-    appendU16(out, 0);
-
-    appendU32(out, 1); // PT_LOAD
-    appendU32(out, 5); // PF_R|PF_X
-    appendU64(out, codeOffset);
-    appendU64(out, baseVaddr + static_cast<std::uint64_t>(codeOffset));
-    appendU64(out, baseVaddr + static_cast<std::uint64_t>(codeOffset));
-    appendU64(out, image.textBytes.size());
-    appendU64(out, image.textBytes.size());
-    appendU64(out, 0x1000);
-
-    if (out.size() < codeOffset) {
-        out.resize(codeOffset, 0);
-    }
-    out.insert(out.end(), image.textBytes.begin(), image.textBytes.end());
-    return out;
-}
-
-std::vector<std::uint8_t> emitMachO64Executable(const NativeProgramImage& image, TargetArch arch) {
-    const bool isArm64 = arch == TargetArch::Arm64;
-    if (!isArm64 && arch != TargetArch::X64) {
-        throw std::runtime_error("Mach-O emission currently supports x86_64 and arm64 targets only");
-    }
-
-    constexpr std::uint32_t MH_MAGIC_64 = 0xFEEDFACF;
-    constexpr std::uint32_t MH_EXECUTE = 2;
-    constexpr std::uint32_t LC_SEGMENT_64 = 0x19;
-    constexpr std::uint32_t LC_MAIN = 0x80000028;
-
-    const std::uint32_t cpuType = isArm64 ? 0x0100000C : 0x01000007;
-    const std::uint32_t cpuSubtype = isArm64 ? 0x00000000 : 0x00000003;
-    const std::size_t segmentCmdSize = 72 + 80;
-    const std::size_t entryCmdSize = 24;
-    const std::size_t sizeofcmds = segmentCmdSize + entryCmdSize;
-    const std::size_t headerSize = 32 + sizeofcmds;
-    const std::size_t codeOffset = alignUp(headerSize, 0x1000);
-    const std::uint64_t vmaddr = 0x100000000ULL;
-
-    std::vector<std::uint8_t> out;
-    out.reserve(codeOffset + image.textBytes.size());
-
-    appendU32(out, MH_MAGIC_64);
-    appendU32(out, cpuType);
-    appendU32(out, cpuSubtype);
-    appendU32(out, MH_EXECUTE);
-    appendU32(out, 2); // ncmds
-    appendU32(out, static_cast<std::uint32_t>(sizeofcmds));
-    appendU32(out, 0);
-    appendU32(out, 0);
-
-    appendU32(out, LC_SEGMENT_64);
-    appendU32(out, static_cast<std::uint32_t>(segmentCmdSize));
-    std::array<char, 16> segname{};
-    std::memcpy(segname.data(), "__TEXT", 6);
-    out.insert(out.end(), segname.begin(), segname.end());
-    appendU64(out, vmaddr);
-    appendU64(out, alignUp(image.textBytes.size(), 0x1000));
-    appendU64(out, 0);
-    appendU64(out, alignUp(image.textBytes.size(), 0x1000));
-    appendU32(out, 7);
-    appendU32(out, 5);
-    appendU32(out, 1);
-    appendU32(out, 0);
-
-    std::array<char, 16> sectname{};
-    std::memcpy(sectname.data(), "__text", 6);
-    out.insert(out.end(), sectname.begin(), sectname.end());
-    out.insert(out.end(), segname.begin(), segname.end());
-    appendU64(out, vmaddr);
-    appendU64(out, image.textBytes.size());
-    appendU32(out, 0);
-    appendU32(out, 4);
-    appendU32(out, 0);
-    appendU32(out, 0);
-    appendU32(out, 0x80000400); // pure instructions + some instructions
-    appendU32(out, 0);
-    appendU32(out, 0);
-    appendU32(out, 0);
-
-    appendU32(out, LC_MAIN);
-    appendU32(out, static_cast<std::uint32_t>(entryCmdSize));
-    appendU64(out, image.entryOffset);
-    appendU64(out, 0);
-
-    if (out.size() < codeOffset) {
-        out.resize(codeOffset, 0);
-    }
-    out.insert(out.end(), image.textBytes.begin(), image.textBytes.end());
-    return out;
-}
-
 } // namespace
+
+/*
+ * NATIVE FORMAT EMISSION — CURRENT APPROACH AND KNOWN LIMITATIONS
+ * ================================================================
+ *
+ * CURRENT APPROACH:
+ * ELF and Mach-O outputs are produced by extracting the text (.text) section
+ * from the PE binary produced by the primary x86_64 backend, then wrapping it
+ * in a minimal ELF or Mach-O container header. This is a scaffolding approach
+ * adopted to bootstrap non-Windows output paths quickly.
+ *
+ * KNOWN LIMITATIONS (do not paper over these):
+ * 1. Single-section only. Programs requiring .data, .rodata, .bss, or any
+ *    section beyond .text will produce non-runnable output. The extracted
+ *    payload will be incomplete.
+ * 2. No relocation resolution. Absolute addresses embedded in the PE are not
+ *    rebased. Position-dependent code will crash at load time on systems that
+ *    apply ASLR or load at a non-default base address.
+ * 3. No import resolution. External symbol references (libc, platform libs)
+ *    are not linked. Output is suitable only for position-independent,
+ *    fully self-contained programs.
+ * 4. No debug info. DWARF/CodeView sections are not translated.
+ *
+ * INTENDED UPGRADE PATH:
+ * Replace this entire file with dedicated ELFWriter and MachOWriter classes
+ * that implement proper section tables, relocation resolution (Elf64_Rela /
+ * MachO relocation_info chains), and symbol export. Until that work is complete,
+ * ELF and Mach-O output must be treated as experimental and must not be
+ * marketed as production-ready native linkers.
+ *
+ * DO NOT add new features to the PE-extraction path. New work goes into the
+ * dedicated writer pipeline.
+ */
 
 std::optional<NativeProgramImage> extractTextImageFromPe(const std::vector<std::uint8_t>& peBytes) {
     if (peBytes.size() < 0x100 || peBytes[0] != 'M' || peBytes[1] != 'Z') {
@@ -242,10 +154,13 @@ std::string emitExecutableForFormat(const NativeProgramImage& image,
         case BinaryFormat::Pe32Plus:
             throw std::runtime_error("Internal error: PE emission must use direct backend payload");
         case BinaryFormat::Elf:
-            bytes = emitElf64Executable(image, arch);
+            bytes = ELFWriter(true).writeExecutable(image);
             break;
         case BinaryFormat::MachO:
-            bytes = emitMachO64Executable(image, arch);
+            if (arch != TargetArch::X64 && arch != TargetArch::Arm64) {
+                throw std::runtime_error("Mach-O emission currently supports x86_64 and arm64 targets only");
+            }
+            bytes = MachOWriter(true).writeExecutable(image, arch == TargetArch::Arm64);
             break;
         case BinaryFormat::RawBin:
             bytes = image.textBytes;

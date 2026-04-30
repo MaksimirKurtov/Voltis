@@ -61,6 +61,12 @@ enum class BinaryFormat {
     SRecord
 };
 
+enum class BackendReadiness {
+    Production,
+    Experimental,
+    Planned
+};
+
 struct TargetTriple {
     TargetArch arch = TargetArch::Unknown;
     TargetVendor vendor = TargetVendor::Unknown;
@@ -77,6 +83,7 @@ struct TargetDescription {
     std::string callingConvention;
     std::vector<std::string> isaExtensions;
     std::vector<BinaryFormat> supportedFormats;
+    BackendReadiness readiness = BackendReadiness::Planned;
 };
 
 std::optional<TargetTriple> parseTargetTriple(const std::string& tripleText);
@@ -85,4 +92,3 @@ std::string toString(BinaryFormat format);
 std::optional<BinaryFormat> parseBinaryFormat(const std::string& text);
 std::vector<TargetDescription> listSupportedTargets();
 std::string canonicalTargetTripleForHost();
-

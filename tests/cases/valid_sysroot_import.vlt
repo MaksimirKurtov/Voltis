@@ -1,0 +1,6 @@
+import "sdk/include/sysroot_only_module.vlt";
+
+public fn main() -> int32 {
+    print("sysroot");
+    return sysroot_value();
+}

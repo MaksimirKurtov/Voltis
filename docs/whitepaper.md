@@ -4,7 +4,7 @@ Navigation: [README](../README.md) · [Examples guide](examples.md) · [Spec ind
 
 ## 1. Purpose
 
-Voltis is a native compiled language project focused on readable syntax, strong typing, and direct system-level output. The implementation in this repository is early-stage but real: it already compiles a defined language subset into Windows x64 PE executables.
+Voltis is a native compiled language project focused on readable syntax, strong typing, and direct system-level output. The implementation in this repository is early-stage but real: it already compiles a defined language subset through an in-tree native backend pipeline, with production x86_64 targets and experimental AArch64 scaffolding.
 
 ## 2. Language identity
 
@@ -32,8 +32,9 @@ Voltis source (.vlt)
   -> AST
   -> Semantic analysis
   -> VIR lowering
+  -> VIR optimization + verification
   -> Backend abstraction
-     -> Windows x64 PE backend (native executable)
+     -> Native backend output (target/readiness-gated)
      -> LLVM IR text backend
 ```
 
@@ -72,7 +73,7 @@ Voltis IR (VIR) is the typed, explicit bridge between frontend semantics and bac
 
 The repository currently supports:
 
-- direct native PE output (default path)
+- direct native output from the production-directed backend path
 - LLVM IR text output for inspection
 
 The long-term strategy keeps backend evolution incremental and test-driven.
