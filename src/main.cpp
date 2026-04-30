@@ -1097,10 +1097,16 @@ int main(int argc, char** argv) {
             if (selectedEmitFormat == BinaryFormat::Pe32Plus) {
                 writeFile(outputPath, executableArtifact.payload);
             } else {
-                const std::vector<std::uint8_t> payloadBytes(
-                    executableArtifact.payload.begin(),
-                    executableArtifact.payload.end());
-                const auto nativeImage = extractTextImageFromPe(payloadBytes);
+                std::optional<NativeProgramImage> nativeImage;
+                if (executableArtifact.nativeImage) {
+                    nativeImage = extractTextImageFromNativeImage(*executableArtifact.nativeImage);
+                }
+                if (!nativeImage.has_value()) {
+                    const std::vector<std::uint8_t> payloadBytes(
+                        executableArtifact.payload.begin(),
+                        executableArtifact.payload.end());
+                    nativeImage = extractTextImageFromPe(payloadBytes);
+                }
                 if (!nativeImage.has_value()) {
                     throw std::runtime_error("Failed to derive native text image from backend payload");
                 }
