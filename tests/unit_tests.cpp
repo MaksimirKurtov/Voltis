@@ -79,9 +79,11 @@ int main() {
         const fs::path out = dir / "safe-write.bin";
         safeWriteFile(out, std::vector<std::uint8_t>{'o', 'n', 'e'});
         safeWriteFile(out, std::vector<std::uint8_t>{'t', 'w', 'o'});
-        std::ifstream in(out, std::ios::binary);
-        std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        assert(contents == "two");
+        {
+            std::ifstream in(out, std::ios::binary);
+            std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            assert(contents == "two");
+        }
         fs::remove(out);
     }
 
