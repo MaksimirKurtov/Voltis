@@ -1,0 +1,14 @@
+module {
+  fn main() -> int32 {
+    locals:
+    blocks:
+      bb0 (entry):
+        br bb1
+      bb1 (while.cond.0):
+        %v0 = const bool false
+        br bb3
+      bb3 (while.exit.2):
+        %v2 = const int32 0
+        ret %v2 : int32
+  }
+}

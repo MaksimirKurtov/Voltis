@@ -1,0 +1,37 @@
+module {
+  fn main() -> int32 {
+    locals:
+      %l0 precise:float64
+      %l1 rounded:int32
+      %l2 enabled:bool
+    blocks:
+      bb0 (entry):
+        %v0 = const float64 3.6000000000000001
+        store %l0, %v0 : float64
+        %v1 = load %l0 : float64
+        %v2 = convert %v1 : float64 -> float64 [round]
+        %v3 = convert %v2 : float64 -> int32 [to_int32_trunc]
+        store %l1, %v3 : int32
+        %v4 = const string "true"
+        %v5 = convert %v4 : string -> bool [to_bool]
+        store %l2, %v5 : bool
+        %v6 = load %l2 : bool
+        %v7 = load %l1 : int32
+        %v8 = const int32 0
+        %v9 = gt %v7, %v8 : bool
+        %v10 = and %v6, %v9 : bool
+        br_if %v10, bb1, bb3
+      bb1 (if.then.0):
+        %v11 = load %l1 : int32
+        %v12 = convert %v11 : int32 -> string [to_string]
+        call print [builtin](%v12 : string)
+        br bb2
+      bb2 (if.merge.1):
+        %v14 = const int32 0
+        ret %v14 : int32
+      bb3 (if.else.2):
+        %v13 = const string "disabled"
+        call print [builtin](%v13 : string)
+        br bb2
+  }
+}

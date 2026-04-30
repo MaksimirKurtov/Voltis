@@ -146,6 +146,43 @@ std::optional<NativeProgramImage> extractTextImageFromPe(const std::vector<std::
     return std::nullopt;
 }
 
+std::optional<NativeProgramImage> extractTextImageFromNativeImage(const NativeImage& image) {
+    const NativeSection* textSection = nullptr;
+    for (const auto& section : image.sections) {
+        if (section.kind == NativeSectionKind::Text) {
+            textSection = &section;
+            break;
+        }
+    }
+    if (!textSection) {
+        return std::nullopt;
+    }
+
+    std::uint64_t entryOffset = 0;
+    if (!image.entrySymbol.empty()) {
+        const NativeSymbol* entry = nullptr;
+        for (const auto& symbol : image.symbols) {
+            if (symbol.name == image.entrySymbol) {
+                entry = &symbol;
+                break;
+            }
+        }
+        if (!entry || entry->section != NativeSectionKind::Text) {
+            return std::nullopt;
+        }
+        entryOffset = entry->offset;
+    }
+
+    if (entryOffset >= textSection->bytes.size()) {
+        return std::nullopt;
+    }
+
+    NativeProgramImage imageOut;
+    imageOut.textBytes = textSection->bytes;
+    imageOut.entryOffset = entryOffset;
+    return imageOut;
+}
+
 std::string emitExecutableForFormat(const NativeProgramImage& image,
                                     BinaryFormat format,
                                     TargetArch arch) {

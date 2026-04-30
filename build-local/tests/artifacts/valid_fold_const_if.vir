@@ -1,0 +1,16 @@
+module {
+  fn main() -> int32 {
+    locals:
+    blocks:
+      bb0 (entry):
+        %v0 = const bool true
+        br bb1
+      bb1 (if.then.0):
+        %v1 = const string "hot"
+        call print [builtin](%v1 : string)
+        br bb2
+      bb2 (if.merge.1):
+        %v3 = const int32 0
+        ret %v3 : int32
+  }
+}
