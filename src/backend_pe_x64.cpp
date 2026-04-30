@@ -1,6 +1,7 @@
 #include "backend_pe_x64.h"
 #include "import_utils.h"
 #include "linker_model.h"
+#include "native_image.h"
 
 #include <algorithm>
 #include <cctype>
@@ -30,6 +31,35 @@ struct Symbol {
 
 static std::size_t alignTo(std::size_t value, std::size_t alignment) {
     return (value + alignment - 1) / alignment * alignment;
+}
+
+static NativeSectionKind toNativeSectionKind(SectionId kind) {
+    switch (kind) {
+        case SectionId::Text: return NativeSectionKind::Text;
+        case SectionId::Rdata: return NativeSectionKind::Rodata;
+        case SectionId::Data: return NativeSectionKind::Data;
+        case SectionId::Idata: return NativeSectionKind::Import;
+        case SectionId::Reloc: return NativeSectionKind::Reloc;
+    }
+    return NativeSectionKind::Custom;
+}
+
+static NativeRelocationKind toNativeRelocationKind(FixupKind kind) {
+    switch (kind) {
+        case FixupKind::Rel32: return NativeRelocationKind::Rel32;
+        case FixupKind::RipDisp32: return NativeRelocationKind::PcRel32;
+        case FixupKind::Dir64: return NativeRelocationKind::Abs64;
+    }
+    return NativeRelocationKind::Rel32;
+}
+
+static NativeSymbolVisibility toNativeSymbolVisibility(LinkSymbolVisibility visibility) {
+    switch (visibility) {
+        case LinkSymbolVisibility::Global: return NativeSymbolVisibility::Global;
+        case LinkSymbolVisibility::ExternalImport: return NativeSymbolVisibility::External;
+        case LinkSymbolVisibility::Local: return NativeSymbolVisibility::Local;
+    }
+    return NativeSymbolVisibility::Local;
 }
 
 static void appendU16(std::vector<std::uint8_t>& out, std::uint16_t value) {
@@ -1494,11 +1524,54 @@ public:
             result.diagnostics.error({}, "direct pe backend linker self-check failed: " + *validationError);
             return result;
         }
+        auto nativeImage = std::make_shared<NativeImage>();
+        nativeImage->target = parseTargetTriple(options_.targetTriple).value_or(TargetTriple{
+            TargetArch::X64,
+            TargetVendor::Pc,
+            TargetOs::Windows,
+            TargetAbi::Msvc,
+            options_.targetTriple
+        });
+        nativeImage->entrySymbol = "__voltis_entry";
+        nativeImage->positionIndependent = false;
+        for (const auto& section : image_.linkedImage().sections) {
+            NativeSection outSection;
+            outSection.name = section.name;
+            outSection.kind = toNativeSectionKind(section.kind);
+            outSection.alignment = section.alignment;
+            outSection.bytes = section.bytes;
+            nativeImage->sections.push_back(std::move(outSection));
+        }
+        for (const auto& symbol : image_.linkObject().symbols) {
+            NativeSymbol outSymbol;
+            outSymbol.name = symbol.name;
+            outSymbol.section = toNativeSectionKind(symbol.section);
+            outSymbol.offset = symbol.offset;
+            outSymbol.visibility = toNativeSymbolVisibility(symbol.visibility);
+            outSymbol.isDefined = symbol.isDefined;
+            nativeImage->symbols.push_back(std::move(outSymbol));
+        }
+        for (const auto& relocation : image_.linkObject().relocations) {
+            NativeRelocation outRelocation;
+            outRelocation.section = toNativeSectionKind(relocation.section);
+            outRelocation.offset = relocation.offset;
+            outRelocation.target = relocation.target;
+            outRelocation.kind = toNativeRelocationKind(relocation.kind);
+            outRelocation.addend = relocation.addend;
+            nativeImage->relocations.push_back(std::move(outRelocation));
+        }
+        for (const auto& importSymbol : image_.linkObject().imports) {
+            NativeImport outImport;
+            outImport.library = importSymbol.dll;
+            outImport.symbol = importSymbol.name;
+            nativeImage->imports.push_back(std::move(outImport));
+        }
         result.artifacts.push_back(BackendArtifact{
             BackendOutputKind::Executable,
             options_.moduleName + ".exe",
             payload,
-            false
+            false,
+            nativeImage
         });
         return result;
     }

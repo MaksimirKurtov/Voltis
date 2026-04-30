@@ -1,7 +1,10 @@
 #pragma once
 
 #include "diagnostics.h"
+#include "native_image.h"
 #include "vir.h"
+
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -36,6 +39,8 @@ struct BackendArtifact {
     std::string name;
     std::string payload;
     bool temporaryScaffolding = false;
+    // Optional structured image for native writers (PE/ELF/Mach-O).
+    std::shared_ptr<NativeImage> nativeImage;
 };
 
 struct BackendResult {
