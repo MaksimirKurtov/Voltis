@@ -1,0 +1,13 @@
+module {
+  imports:
+    "kernel32.dll"
+  externs:
+    extern fn GetCurrentProcessId() -> int32 from "kernel32.dll"
+  fn main() -> int32 {
+    locals:
+    blocks:
+      bb0 (entry):
+        %v0 = call GetCurrentProcessId [extern from "kernel32.dll"]() -> int32
+        ret %v0 : int32
+  }
+}
