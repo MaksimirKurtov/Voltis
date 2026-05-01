@@ -252,7 +252,7 @@ ctest --verbose
 | **Tool tests** | `tests/cases/*.vlt` | ~2 | CLI commands |
 | **Example tests** | `tests/cases/*.vlt` | ~3 | Documented examples |
 
-**Total:** 25/25 passing ✅
+**Total:** 53/53 passing ✅
 
 ### Custom Test Case
 

@@ -2,7 +2,7 @@
 
 > A native-compiled language project with a real compiler pipeline.
 
-[![Build](https://img.shields.io/badge/build-ctest%2025%2F25%20passing-brightgreen)](tests/CMakeLists.txt)
+[![Build](https://img.shields.io/badge/build-ctest%2053%2F53%20passing-brightgreen)](tests/CMakeLists.txt)
 [![Repository Status](https://img.shields.io/badge/status-public%20alpha-blue)](ROADMAP.md)
 [![Language Stage](https://img.shields.io/badge/language%20stage-early%20compiler%20maturity-orange)](docs/whitepaper.md)
 [![License](https://img.shields.io/badge/license-VCL%20%2B%20CC--BY%204.0-6f42c1)](LICENSE)
@@ -22,7 +22,7 @@ Voltis is an **early-stage but real native language compiler** with a complete p
 - ✅ **Real native compilation** — Not an interpreter or transpiler
 - ✅ **Production-ready PE backend** — Windows x86-64 fully supported
 - ✅ **Cross-platform targets** — Windows, Linux, macOS (3+ architecture targets)
-- ✅ **25/25 tests passing** — Comprehensive test suite
+- ✅ **53/53 tests passing** — Comprehensive test suite
 - ✅ **100% self-contained** — No external dependencies
 
 **Compilation pipeline:**
@@ -67,7 +67,7 @@ Voltis is an **early-stage but real native language compiler** with a complete p
 | **Cross-Compilation** | ✅ Supported | Target triple support: x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu, aarch64-apple-darwin, etc. |
 | **Benchmarking** | ✅ Working | `--benchmark` with live dashboard and CSV history |
 | **Error Diagnostics** | ✅ Good | Source-location based error messages for undefined symbols, type mismatches |
-| **Test Suite** | ✅ 25/25 passing | Parser, semantic, VIR, codegen, runtime, examples, platform tests |
+| **Test Suite** | ✅ 53/53 passing | Parser, semantic, VIR, codegen, runtime, examples, platform tests |
 
 ## Platform Support
 
@@ -146,7 +146,7 @@ cd build
 ctest --output-on-failure
 ```
 
-**Expected:** 25/25 tests passing ✅
+**Expected:** 53/53 tests passing ✅
 
 For detailed setup instructions, see [GETTING_STARTED.md](GETTING_STARTED.md).
 
@@ -317,7 +317,7 @@ See [LINKER_USAGE.md](LINKER_USAGE.md) for comprehensive linking examples.
 ✅ **Complete:**
 - Native Windows PE x86-64 backend
 - Cross-platform target support (Linux, macOS)
-- Comprehensive test suite (25/25 passing)
+- Comprehensive test suite (53/53 passing)
 - Core language features (functions, types, control flow)
 
 ### Near-Term (P0-P1)
