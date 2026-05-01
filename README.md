@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="vltlogo.png" alt="Voltis logo" width="180" />
+    <img src="vltlogo.png" alt="Voltis logo" width="580" />
 </p>
 
 # Voltis
