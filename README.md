@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="vltlogo.png" alt="Voltis logo" width="180" />
+</p>
+
 # Voltis
 
 > A native-compiled language project with a real compiler pipeline.
