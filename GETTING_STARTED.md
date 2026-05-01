@@ -96,7 +96,7 @@ ctest --output-on-failure
 ./voltisc --list-targets
 ```
 
-All 25/25 tests should pass. ✅
+All 53/53 tests should pass. ✅
 
 ## Your First Program
 
