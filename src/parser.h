@@ -29,6 +29,7 @@ private:
     std::string parseType();
     std::string parseImportPath();
     ImportDecl parseImportDecl();
+    TypeAliasDecl parseTypeAliasDecl();
     StructDecl parseStructDecl();
     FunctionDecl parseFunction();
     ExternFunctionDecl parseExternFunction();
