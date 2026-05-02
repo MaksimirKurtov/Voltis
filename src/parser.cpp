@@ -130,6 +130,11 @@ Program Parser::parseProgram() {
 
         const std::size_t declarationStart = current_;
         skipModifiers();
+        if (check(TokenType::KeywordType)) {
+            current_ = declarationStart;
+            program.typeAliases.push_back(parseTypeAliasDecl());
+            continue;
+        }
         if (check(TokenType::KeywordStruct)) {
             current_ = declarationStart;
             program.structs.push_back(parseStructDecl());
@@ -178,6 +183,16 @@ ImportDecl Parser::parseImportDecl() {
     return ImportDecl{path, SourceLocation{importToken.line, importToken.column}};
 }
 
+TypeAliasDecl Parser::parseTypeAliasDecl() {
+    skipModifiers();
+    const Token& typeToken = consume(TokenType::KeywordType, "Expected 'type'");
+    const Token& nameToken = consume(TokenType::Identifier, "Expected alias name");
+    consume(TokenType::Assign, "Expected '=' in type alias declaration");
+    const std::string targetType = parseType();
+    consume(TokenType::Semicolon, "Expected ';' after type alias declaration");
+    return TypeAliasDecl{nameToken.lexeme, targetType, SourceLocation{typeToken.line, typeToken.column}};
+}
+
 StructDecl Parser::parseStructDecl() {
     skipModifiers();
     const Token& structToken = consume(TokenType::KeywordStruct, "Expected 'struct'");
@@ -219,8 +234,10 @@ FunctionDecl Parser::parseFunction() {
         } while (match(TokenType::Comma));
     }
     consume(TokenType::RParen, "Expected ')'");
-    consume(TokenType::Arrow, "Expected '->'");
-    std::string returnType = parseType();
+    std::string returnType;
+    if (match(TokenType::Arrow)) {
+        returnType = parseType();
+    }
     auto body = parseBlock();
     return FunctionDecl{nameToken.lexeme, std::move(params), returnType, std::move(body), SourceLocation{nameToken.line, nameToken.column}};
 }

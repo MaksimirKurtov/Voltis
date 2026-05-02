@@ -35,6 +35,7 @@ bool isBlankString(std::string_view value) {
 bool SemanticAnalyzer::analyze(Program& program) {
     diagnostics_ = DiagnosticBag{};
     functions_.clear();
+    typeAliases_.clear();
     structs_.clear();
     importedPaths_.clear();
     scopes_.clear();
@@ -43,6 +44,7 @@ bool SemanticAnalyzer::analyze(Program& program) {
     currentReturnType_ = "void";
     loopDepth_ = 0;
 
+    registerTypeAliases(program);
     registerStructs(program);
     registerImports(program);
     registerFunctions(program);
@@ -63,6 +65,24 @@ const std::unordered_map<const Expr*, std::string>& SemanticAnalyzer::expression
 
 const std::unordered_map<const Expr*, SemanticAnalyzer::ConversionInfo>& SemanticAnalyzer::conversionInfos() const {
     return conversionInfos_;
+}
+
+void SemanticAnalyzer::registerTypeAliases(const Program& program) {
+    for (const auto& alias : program.typeAliases) {
+        if (isKnownType(alias.name) || typeAliases_.find(alias.name) != typeAliases_.end()) {
+            diagnostics_.error(alias.location, "duplicate type declaration '" + alias.name + "'");
+            continue;
+        }
+        if (alias.targetType == alias.name) {
+            diagnostics_.error(alias.location, "recursive type alias '" + alias.name + "'");
+            continue;
+        }
+        if (!isKnownType(alias.targetType)) {
+            diagnostics_.error(alias.location, "unknown alias target type '" + alias.targetType + "' for '" + alias.name + "'");
+            continue;
+        }
+        typeAliases_.emplace(alias.name, alias.targetType);
+    }
 }
 
 void SemanticAnalyzer::registerStructs(const Program& program) {
@@ -111,7 +131,7 @@ void SemanticAnalyzer::registerFunctions(const Program& program) {
             continue;
         }
 
-        if (!isKnownType(function.returnType)) {
+        if (!function.returnType.empty() && !isKnownType(function.returnType)) {
             diagnostics_.error(function.location, "unknown return type '" + function.returnType + "' for function '" + function.name + "'");
         }
 
@@ -127,7 +147,8 @@ void SemanticAnalyzer::registerFunctions(const Program& program) {
             paramTypes.push_back(param.type);
         }
 
-        functions_.emplace(function.name, FunctionSymbol{std::move(paramTypes), function.returnType, false, "", function.location});
+        const std::string declaredOrPlaceholderReturnType = function.returnType.empty() ? "void" : function.returnType;
+        functions_.emplace(function.name, FunctionSymbol{std::move(paramTypes), declaredOrPlaceholderReturnType, false, "", function.location});
     }
 
     for (const auto& externFunction : program.externFunctions) {
@@ -167,7 +188,9 @@ void SemanticAnalyzer::registerFunctions(const Program& program) {
 }
 
 void SemanticAnalyzer::analyzeFunction(FunctionDecl& function) {
-    currentReturnType_ = function.returnType;
+    currentFunctionName_ = function.name;
+    currentInferredReturnTypes_.clear();
+    currentReturnType_ = function.returnType.empty() ? "__infer__" : function.returnType;
     loopDepth_ = 0;
     pushScope();
 
@@ -176,6 +199,20 @@ void SemanticAnalyzer::analyzeFunction(FunctionDecl& function) {
     }
 
     analyzeBlock(*function.body, false);
+
+    if (function.returnType.empty()) {
+        const std::string inferredType = inferFunctionReturnType();
+        if (isErrorType(inferredType)) {
+            diagnostics_.error(function.location, "cannot infer return type for function '" + function.name + "': incompatible return types in return statements");
+        }
+        function.returnType = inferredType;
+        currentReturnType_ = inferredType;
+        auto it = functions_.find(function.name);
+        if (it != functions_.end()) {
+            it->second.returnType = inferredType;
+        }
+    }
+
     if (currentReturnType_ != "void" && !blockAlwaysReturns(*function.body)) {
         diagnostics_.error(function.location, "function '" + function.name + "' with return type '" + currentReturnType_ + "' is missing a return statement on some paths");
     }
@@ -203,6 +240,15 @@ void SemanticAnalyzer::analyzeStatement(Stmt* statement) {
     }
 
     if (auto* returnStmt = dynamic_cast<ReturnStmt*>(statement)) {
+        if (currentReturnType_ == "__infer__") {
+            if (!returnStmt->expr) {
+                currentInferredReturnTypes_.push_back("void");
+                return;
+            }
+            currentInferredReturnTypes_.push_back(analyzeExpr(returnStmt->expr.get()));
+            return;
+        }
+
         if (currentReturnType_ == "void") {
             if (returnStmt->expr) {
                 diagnostics_.error(returnStmt->location, "void function cannot return a value");
@@ -448,6 +494,12 @@ std::string SemanticAnalyzer::analyzeCallExpr(CallExpr* callExpr) {
         return makeTypeErrorType(callExpr, "undefined function '" + name + "'");
     }
 
+    if (currentReturnType_ == "__infer__" && name == currentFunctionName_) {
+        diagnostics_.error(callExpr->location,
+            "recursive function '" + currentFunctionName_ + "' requires an explicit return type");
+        return setExprType(callExpr, kErrorType);
+    }
+
     const FunctionSymbol& fn = fnIt->second;
     if (argTypes.size() != fn.paramTypes.size()) {
         diagnostics_.error(callExpr->location, "function '" + name + "' expects " + std::to_string(fn.paramTypes.size()) +
@@ -636,6 +688,21 @@ const SemanticAnalyzer::VariableSymbol* SemanticAnalyzer::lookupVariable(const s
     return nullptr;
 }
 
+std::string SemanticAnalyzer::resolveAliasType(const std::string& type) const {
+    std::string current = type;
+    std::unordered_set<std::string> seen;
+    while (true) {
+        auto it = typeAliases_.find(current);
+        if (it == typeAliases_.end()) {
+            return current;
+        }
+        if (!seen.insert(current).second) {
+            return kErrorType;
+        }
+        current = it->second;
+    }
+}
+
 bool SemanticAnalyzer::isKnownType(const std::string& type) const {
     if (type.empty()) {
         return false;
@@ -654,13 +721,19 @@ bool SemanticAnalyzer::isKnownType(const std::string& type) const {
         return *base != "void" && isKnownType(*base);
     }
 
-    return type == "int32" || type == "float32" || type == "float64" ||
-           type == "string" || type == "bool" || type == "void" ||
-           structs_.find(type) != structs_.end();
+    const std::string resolved = resolveAliasType(type);
+    return resolved == "int8" || resolved == "int16" || resolved == "int32" || resolved == "int64" ||
+           resolved == "uint8" || resolved == "uint16" || resolved == "uint32" || resolved == "uint64" ||
+           resolved == "usize" || resolved == "isize" || resolved == "float32" || resolved == "float64" ||
+           resolved == "bool" || resolved == "char" || resolved == "byte" || resolved == "string" ||
+           resolved == "void" || structs_.find(resolved) != structs_.end();
 }
 
 bool SemanticAnalyzer::isNumericType(const std::string& type) const {
-    return type == "int32" || type == "float32" || type == "float64";
+    return type == "int8" || type == "int16" || type == "int32" || type == "int64" ||
+           type == "uint8" || type == "uint16" || type == "uint32" || type == "uint64" ||
+           type == "usize" || type == "isize" || type == "byte" ||
+           type == "float32" || type == "float64";
 }
 
 bool SemanticAnalyzer::isFloatType(const std::string& type) const {
@@ -668,34 +741,49 @@ bool SemanticAnalyzer::isFloatType(const std::string& type) const {
 }
 
 bool SemanticAnalyzer::isAssignable(const std::string& target, const std::string& source) const {
-    if (isErrorType(target) || isErrorType(source)) {
+    const std::string resolvedTarget = resolveAliasType(target);
+    const std::string resolvedSource = resolveAliasType(source);
+    if (isErrorType(resolvedTarget) || isErrorType(resolvedSource)) {
         return true;
     }
 
-    if (target == source) {
+    if (resolvedTarget == resolvedSource) {
         return true;
     }
 
-    if (const auto targetRef = baseTypeIfReference(target)) {
-        return *targetRef == source;
+    if (const auto targetRef = baseTypeIfReference(resolvedTarget)) {
+        return *targetRef == resolvedSource;
     }
 
-    if (const auto sourceRef = baseTypeIfReference(source)) {
-        if (target == *sourceRef) {
+    if (const auto sourceRef = baseTypeIfReference(resolvedSource)) {
+        if (resolvedTarget == *sourceRef) {
             return true;
         }
     }
 
-    if (target == "float64" && (source == "float32" || source == "int32")) {
+    static const std::unordered_map<std::string, int> intRank = {
+        {"int8", 1}, {"uint8", 1}, {"byte", 1},
+        {"int16", 2}, {"uint16", 2},
+        {"int32", 3}, {"uint32", 3},
+        {"int64", 4}, {"uint64", 4},
+        {"isize", 4}, {"usize", 4},
+    };
+    const auto targetInt = intRank.find(resolvedTarget);
+    const auto sourceInt = intRank.find(resolvedSource);
+
+    if (targetInt != intRank.end() && sourceInt != intRank.end()) {
+        return sourceInt->second <= targetInt->second;
+    }
+
+    if (resolvedTarget == "float32" && sourceInt != intRank.end()) {
+        return true;
+    }
+    if (resolvedTarget == "float64" && (resolvedSource == "float32" || sourceInt != intRank.end())) {
         return true;
     }
 
-    if (target == "float32" && source == "int32") {
-        return true;
-    }
-
-    if (const auto targetSlice = sliceElementType(target)) {
-        if (const auto sourceArray = arrayElementType(source)) {
+    if (const auto targetSlice = sliceElementType(resolvedTarget)) {
+        if (const auto sourceArray = arrayElementType(resolvedSource)) {
             return *targetSlice == *sourceArray;
         }
     }
@@ -706,11 +794,24 @@ bool SemanticAnalyzer::isAssignable(const std::string& target, const std::string
 std::string SemanticAnalyzer::commonNumericType(const std::string& left, const std::string& right) const {
     if (left == "float64" || right == "float64") return "float64";
     if (left == "float32" || right == "float32") return "float32";
-    return "int32";
+
+    static const std::unordered_map<std::string, int> intRank = {
+        {"int8", 1}, {"uint8", 1}, {"byte", 1},
+        {"int16", 2}, {"uint16", 2},
+        {"int32", 3}, {"uint32", 3},
+        {"int64", 4}, {"uint64", 4},
+        {"isize", 4}, {"usize", 4},
+    };
+    const auto l = intRank.find(left);
+    const auto r = intRank.find(right);
+    if (l != intRank.end() && r != intRank.end()) {
+        return l->second >= r->second ? left : right;
+    }
+    return "";
 }
 
 bool SemanticAnalyzer::isPrimitiveType(const std::string& type) const {
-    return type == "int32" || type == "float32" || type == "float64" || type == "string" || type == "bool";
+    return isNumericType(type) || type == "char" || type == "string" || type == "bool";
 }
 
 bool SemanticAnalyzer::isNumericStringForInt32(const std::string& value) const {
@@ -855,4 +956,37 @@ bool SemanticAnalyzer::statementAlwaysReturns(const Stmt* statement) const {
     }
 
     return false;
+}
+
+
+std::string SemanticAnalyzer::inferFunctionReturnType() const {
+    if (currentInferredReturnTypes_.empty()) {
+        return "void";
+    }
+
+    std::string inferred = currentInferredReturnTypes_.front();
+    for (std::size_t i = 1; i < currentInferredReturnTypes_.size(); ++i) {
+        inferred = unifyTypesForInference(inferred, currentInferredReturnTypes_[i]);
+        if (isErrorType(inferred)) {
+            return kErrorType;
+        }
+    }
+
+    return inferred;
+}
+
+std::string SemanticAnalyzer::unifyTypesForInference(const std::string& current, const std::string& next) const {
+    if (current == next) {
+        return current;
+    }
+    if (current == "void" || next == "void") {
+        return kErrorType;
+    }
+    if (isNumericType(current) && isNumericType(next)) {
+        const std::string common = commonNumericType(current, next);
+        if (!common.empty()) {
+            return common;
+        }
+    }
+    return kErrorType;
 }

@@ -58,14 +58,18 @@ private:
 
     DiagnosticBag diagnostics_;
     std::unordered_map<std::string, FunctionSymbol> functions_;
+    std::unordered_map<std::string, std::string> typeAliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, StructFieldSymbol>> structs_;
     std::unordered_set<std::string> importedPaths_;
     std::vector<std::unordered_map<std::string, VariableSymbol>> scopes_;
     std::unordered_map<const Expr*, std::string> expressionTypes_;
     std::unordered_map<const Expr*, ConversionInfo> conversionInfos_;
+    std::string currentFunctionName_;
     std::string currentReturnType_;
+    std::vector<std::string> currentInferredReturnTypes_;
     int loopDepth_ = 0;
 
+    void registerTypeAliases(const Program& program);
     void registerStructs(const Program& program);
     void registerImports(const Program& program);
     void registerFunctions(const Program& program);
@@ -82,6 +86,7 @@ private:
     bool declareVariable(const std::string& name, const std::string& type, const SourceLocation& location);
     const VariableSymbol* lookupVariable(const std::string& name) const;
 
+    std::string resolveAliasType(const std::string& type) const;
     bool isKnownType(const std::string& type) const;
     bool isNumericType(const std::string& type) const;
     bool isFloatType(const std::string& type) const;
@@ -103,4 +108,6 @@ private:
     bool isErrorType(const std::string& type) const;
     bool blockAlwaysReturns(const BlockStmt& block) const;
     bool statementAlwaysReturns(const Stmt* statement) const;
+    std::string inferFunctionReturnType() const;
+    std::string unifyTypesForInference(const std::string& current, const std::string& next) const;
 };

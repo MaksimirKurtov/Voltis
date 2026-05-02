@@ -35,6 +35,7 @@ enum class TokenType {
     KeywordUnsafe,
 
     KeywordFn,
+    KeywordType,
     KeywordStruct,
     KeywordIf,
     KeywordElse,

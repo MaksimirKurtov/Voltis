@@ -93,6 +93,7 @@ Token Lexer::identifierOrKeyword() {
         {"volatile", TokenType::KeywordVolatile},
         {"unsafe", TokenType::KeywordUnsafe},
         {"fn", TokenType::KeywordFn},
+        {"type", TokenType::KeywordType},
         {"struct", TokenType::KeywordStruct},
         {"if", TokenType::KeywordIf},
         {"else", TokenType::KeywordElse},

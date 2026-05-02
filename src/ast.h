@@ -123,7 +123,7 @@ struct Param {
 struct FunctionDecl {
     std::string name;
     std::vector<Param> params;
-    std::string returnType;
+    std::string returnType; // empty means inferred from body
     std::unique_ptr<BlockStmt> body;
     SourceLocation location;
 };
@@ -153,7 +153,14 @@ struct StructDecl {
     SourceLocation location;
 };
 
+struct TypeAliasDecl {
+    std::string name;
+    std::string targetType;
+    SourceLocation location;
+};
+
 struct Program {
+    std::vector<TypeAliasDecl> typeAliases;
     std::vector<StructDecl> structs;
     std::vector<ImportDecl> imports;
     std::vector<ExternFunctionDecl> externFunctions;
